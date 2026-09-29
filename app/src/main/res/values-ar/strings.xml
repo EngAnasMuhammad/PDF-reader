@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">قارئ PDF</string>
+    <string name="recent_file">احدث الملفات</string>
+    <string name="my_documents">مستنداتي</string>
+    <string name="open_pdf">فتح PDF</string>
+    <string name="no_recent_doc">لا توجد مستندات حديثة</string>
+    <string name="reading_mode">وضع القراءة</string>
+    <string name="setting">الاعدادات</string>
+    <string name="back">رجوع</string>
+    <string name="normal_filter">عادي</string>
+    <string name="sepia_filter">دافئ</string>
+    <string name="dim_filter">معتم</string>
+    <string name="reading_preferences">تفضيلات القراءة</string>
+    <string name="keep_screen_awake">ابقاء الشاشة مضيئة</string>
+    <string name="keep_screen_awake_description">منع الشاشة من الدخول في وضع السكون أثناء القراءة</string>
+    <string name="horizontal_scrolling">التمرير الأفقي</string>
+    <string name="horizontal_scrolling_description">اسحب لليسار/اليمين لتقليب الصفحات بدلاً من الأعلى/الأسفل</string>
+    <string name="app_theme">مظهر التطبيق</string>
+    <string name="system_default">الإعداد الافتراضي للنظام</string>
+    <string name="light_theme">فاتح</string>
+    <string name="dark_theme">داكن</string>
+    <string name="privacy">الخصوصية</string>
+    <string name="clear_history">مسح السجل</string>
+    <string name="clear_history_title">مسح السجل؟</string>
+    <string name="clear_history_dialog_description">سيؤدي هذا إلى إزالة جميع الملفات الحديثة من شاشتك الرئيسية، ولن يتم حذف ملفات PDF الفعلية الموجودة على جهازك.</string>
+    <string name="clear_history_description">أزِل جميع الملفات من قائمة "مستنداتي."</string>
+    <string name="credit_to_marain87">مدعوم بواسطة AndroidPDFViewer (marain87)</string>
+    <string name="clear">مسح</string>
+    <string name="cancel">الغاء</string>
+    <string name="choose_theme">اختر مظهر</string>
+    <string name="more_options">خيارات إضافية</string>
+    <string name="open_file">فتح ملف</string>
+
+    <string name="language">اللغة</string>
+    <string name="lang_system">تلقائي حسب النظام</string>
+    <string name="lang_english">English</string>
+    <string name="lang_arabic">العربية</string>
+</resources>

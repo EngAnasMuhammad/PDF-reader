@@ -1,0 +1,38 @@
+<resources>
+    <string name="app_name">PDF reader</string>
+    <string name="recent_file">Recent Files</string>
+    <string name="my_documents">My Documents</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="no_recent_doc">No recent documents</string>
+    <string name="reading_mode">Reading Mode</string>
+    <string name="setting">Settings</string>
+    <string name="back">Back</string>
+    <string name="normal_filter">Normal</string>
+    <string name="sepia_filter">Warm Sepia</string>
+    <string name="dim_filter">Dimmed Dark</string>
+    <string name="reading_preferences">Reading Preferences</string>
+    <string name="keep_screen_awake">Keep Screen Awake</string>
+    <string name="keep_screen_awake_description">Prevent the screen from sleeping while reading</string>
+    <string name="horizontal_scrolling">Horizontal Scrolling</string>
+    <string name="horizontal_scrolling_description">Swipe left/right to turn pages instead of up/down</string>
+    <string name="app_theme">App Theme</string>
+    <string name="system_default">System Default</string>
+    <string name="light_theme">Light</string>
+    <string name="dark_theme">Dark</string>
+    <string name="privacy">Privacy</string>
+    <string name="clear_history">Clear Recent History</string>
+    <string name="clear_history_title">Clear History?</string>
+    <string name="clear_history_dialog_description">This will remove all recent files from your home screen. The actual PDF files on your device will not be deleted.</string>
+    <string name="clear_history_description">Remove all files from the My Documents list</string>
+    <string name="credit_to_marain87">Powered by AndroidPDFViewer (marain87)</string>
+    <string name="clear">Clear</string>
+    <string name="cancel">Cancel</string>
+    <string name="choose_theme">Choose theme</string>
+    <string name="more_options">More options</string>
+    <string name="open_file">Open File</string>
+
+    <string name="language">Language</string>
+    <string name="lang_system">System Default</string>
+    <string name="lang_english">English</string>
+    <string name="lang_arabic">العربية</string>
+</resources>
