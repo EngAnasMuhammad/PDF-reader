@@ -20,7 +20,10 @@ This project demonstrates the implementation of **Clean Architecture**, **Jetpac
 * **CI/CD:** GitHub Actions (Automated Debug APK Builds)
 
 ## 📸 Screenshots
-*(Drag and drop 2-3 screenshots of your app here. Show the dark mode, the Arabic UI, and the PDF reader in action)*
+<img width="1080" height="2400" alt="image" src="https://github.com/user-attachments/assets/30ecb02f-fa88-497f-948f-5cf646a8fc56" />
+<img width="1080" height="2400" alt="image" src="https://github.com/user-attachments/assets/07906948-d7fd-4fac-b7ff-de4a412bea71" />
+<img width="1080" height="2400" alt="image" src="https://github.com/user-attachments/assets/a92a399f-2939-4e2f-8300-27bd6e228a75" />
+
 
 ## 🚀 Installation
 1. Go to the [Releases](../../releases) tab.
