@@ -1,4 +1,4 @@
-package com.example.pdfreader.presentation.model
+package com.example.pdfreader.domain.model
 
 enum class ReadingMode {
     NORMAL,

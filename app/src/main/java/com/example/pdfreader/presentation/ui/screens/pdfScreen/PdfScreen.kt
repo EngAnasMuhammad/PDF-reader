@@ -34,7 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.pdfreader.R
-import com.example.pdfreader.presentation.model.ReadingMode
+import com.example.pdfreader.domain.model.ReadingMode
 import com.example.pdfreader.presentation.state.PdfViewModel
 import com.example.pdfreader.presentation.utils.PdfColorFilters
 import com.github.barteksc.pdfviewer.PDFView
@@ -54,12 +54,13 @@ fun PdfScreen(
     val startPage by viewModel.startPage.collectAsStateWithLifecycle()
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsStateWithLifecycle()
     val isHorizontalScroll by viewModel.isHorizontalScroll.collectAsStateWithLifecycle()
+    val readingMode by viewModel.readingMode.collectAsStateWithLifecycle()
 
     val backgroundColor = MaterialTheme.colorScheme.background.toArgb()
 
     var showMenu by remember { mutableStateOf(false) }
     var showNightModeSubMenu by remember { mutableStateOf(false) }
-    var currentReadingMode by remember { mutableStateOf(ReadingMode.NORMAL) }
+    var pdfViewRef by remember { mutableStateOf<PDFView?>(null) }
 
     val localView = LocalView.current
     DisposableEffect(keepScreenAwake) {
@@ -68,6 +69,14 @@ fun PdfScreen(
         }
         onDispose {
             localView.keepScreenOn = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            pdfViewRef?.let { pdfView ->
+                viewModel.saveCurrentPage(pdfView.currentPage)
+            }
         }
     }
 
@@ -83,7 +92,10 @@ fun PdfScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { onClickBack() }) {
+                    IconButton(onClick = {
+                        pdfViewRef?.let { viewModel.saveCurrentPage(it.currentPage) }
+                        onClickBack()
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back) // Localized
@@ -115,6 +127,7 @@ fun PdfScreen(
                                 text = { Text(stringResource(R.string.setting)) },
                                 onClick = {
                                     showMenu = false
+                                    pdfViewRef?.let { viewModel.saveCurrentPage(it.currentPage) }
                                     onClickSetting()
                                 }
                             )
@@ -132,21 +145,21 @@ fun PdfScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.normal_filter)) },
                                 onClick = {
-                                    currentReadingMode = ReadingMode.NORMAL
+                                    viewModel.setReadingMode(ReadingMode.NORMAL)
                                     showMenu = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.sepia_filter)) },
                                 onClick = {
-                                    currentReadingMode = ReadingMode.SEPIA
+                                    viewModel.setReadingMode(ReadingMode.SEPIA)
                                     showMenu = false
                                 }
                             )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.dim_filter)) },
                                 onClick = {
-                                    currentReadingMode = ReadingMode.DIMMED
+                                    viewModel.setReadingMode(ReadingMode.DIMMED)
                                     showMenu = false
                                 }
                             )
@@ -171,6 +184,7 @@ fun PdfScreen(
                             this.maxZoom = 8.0f
                             this.setBackgroundColor(backgroundColor)
                         }
+                        pdfViewRef = pdfView
 
                         val wrapper = object : FrameLayout(context) {
                             private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -218,7 +232,7 @@ fun PdfScreen(
                     update = { wrapper ->
                         val pdfView = wrapper.getChildAt(0) as PDFView
 
-                        when (currentReadingMode) {
+                        when (readingMode) {
                             ReadingMode.NORMAL -> {
                                 pdfView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                             }

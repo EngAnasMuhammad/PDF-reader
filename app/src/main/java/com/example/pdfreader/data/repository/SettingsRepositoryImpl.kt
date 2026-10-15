@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.example.pdfreader.domain.model.AppLanguage
 import com.example.pdfreader.domain.model.AppTheme
+import com.example.pdfreader.domain.model.ReadingMode
 import com.example.pdfreader.domain.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -42,5 +43,18 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override fun setAppLanguage(language: AppLanguage) {
         prefs.edit { putString("app_lang", language.name) }
+    }
+
+    override fun getReadingMode(): ReadingMode {
+        val savedMode = prefs.getString("reading_mode", ReadingMode.NORMAL.name) ?: ReadingMode.NORMAL.name
+        return try {
+            ReadingMode.valueOf(savedMode)
+        } catch (_: IllegalArgumentException) {
+            ReadingMode.NORMAL
+        }
+    }
+
+    override fun setReadingMode(mode: ReadingMode) {
+        prefs.edit { putString("reading_mode", mode.name) }
     }
 }

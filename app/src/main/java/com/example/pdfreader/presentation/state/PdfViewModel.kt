@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.pdfreader.data.local.RecentFile
 import com.example.pdfreader.domain.model.AppLanguage
 import com.example.pdfreader.domain.model.AppTheme
+import com.example.pdfreader.domain.model.ReadingMode
 import com.example.pdfreader.domain.repository.PdfRepository
 import com.example.pdfreader.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +49,9 @@ class PdfViewModel @Inject constructor(
     private val _appLanguage = MutableStateFlow(settingsRepository.getAppLanguage())
     val appLanguage: StateFlow<AppLanguage> = _appLanguage.asStateFlow()
 
+    private val _readingMode = MutableStateFlow(settingsRepository.getReadingMode())
+    val readingMode: StateFlow<ReadingMode> = _readingMode.asStateFlow()
+
     // --- SETTINGS ACTIONS ---
     fun toggleKeepScreenAwake(isEnabled: Boolean) {
         settingsRepository.setKeepScreenAwake(isEnabled)
@@ -67,6 +71,11 @@ class PdfViewModel @Inject constructor(
     fun setAppLanguage(language: AppLanguage) {
         settingsRepository.setAppLanguage(language)
         _appLanguage.value = language
+    }
+
+    fun setReadingMode(mode: ReadingMode) {
+        settingsRepository.setReadingMode(mode)
+        _readingMode.value = mode
     }
 
     fun clearRecentHistory() {
@@ -110,6 +119,7 @@ class PdfViewModel @Inject constructor(
 
     fun saveCurrentPage(page: Int) {
         val uri = _pdfUri.value?.toString() ?: return
+        _startPage.value = page
         viewModelScope.launch {
             pdfRepository.updatePage(uri, page)
         }

@@ -2,6 +2,7 @@ package com.example.pdfreader.domain.repository
 
 import com.example.pdfreader.domain.model.AppLanguage
 import com.example.pdfreader.domain.model.AppTheme
+import com.example.pdfreader.domain.model.ReadingMode
 
 interface SettingsRepository {
     fun getKeepScreenAwake(): Boolean
@@ -15,4 +16,7 @@ interface SettingsRepository {
 
     fun getAppLanguage(): AppLanguage
     fun setAppLanguage(language: AppLanguage)
+
+    fun getReadingMode(): ReadingMode
+    fun setReadingMode(mode: ReadingMode)
 }
