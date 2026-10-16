@@ -2,7 +2,6 @@ package com.example.pdfreader.presentation.ui.screens.pdfScreen
 
 import android.view.GestureDetector
 import android.view.MotionEvent
-import android.view.View
 import android.widget.FrameLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -80,8 +80,17 @@ fun PdfScreen(
         }
     }
 
+    // Apply color filter to the entire Scaffold (which spans edge-to-edge covering system bars)
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                colorFilter = when (readingMode) {
+                    ReadingMode.NORMAL -> null
+                    ReadingMode.SEPIA -> PdfColorFilters.sepiaColorFilter
+                    ReadingMode.DIMMED -> PdfColorFilters.dimmedColorFilter
+                }
+            },
         topBar = {
             TopAppBar(
                 title = {
@@ -229,20 +238,8 @@ fun PdfScreen(
 
                         wrapper
                     },
-                    update = { wrapper ->
-                        val pdfView = wrapper.getChildAt(0) as PDFView
-
-                        when (readingMode) {
-                            ReadingMode.NORMAL -> {
-                                pdfView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                            }
-                            ReadingMode.SEPIA -> {
-                                pdfView.setLayerType(View.LAYER_TYPE_HARDWARE, PdfColorFilters.sepiaPaint)
-                            }
-                            ReadingMode.DIMMED -> {
-                                pdfView.setLayerType(View.LAYER_TYPE_HARDWARE, PdfColorFilters.dimmedPaint)
-                            }
-                        }
+                    update = {
+                        // Removed layer type updates from AndroidView to apply globally
                     }
                 )
             }
