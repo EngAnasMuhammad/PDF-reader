@@ -35,4 +35,7 @@
     <string name="lang_system">System Default</string>
     <string name="lang_english">English</string>
     <string name="lang_arabic">العربية</string>
+
+    <string name="about">About</string>
+    <string name="open_source_licenses">Open Source Licenses</string>
 </resources>

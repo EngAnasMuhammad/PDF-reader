@@ -28,5 +28,9 @@
 -keepclassmembers class kotlinx.coroutines.** { *; }
 
 # Keep App Data & Domain Models
--keep class com.example.pdfreader.domain.model.** { *; }
--keep class com.example.pdfreader.data.local.** { *; }
+-keep class com.anasdev.pdfreader.domain.model.** { *; }
+-keep class com.anasdev.pdfreader.data.local.** { *; }
+
+# PDFium Native Bindings Keep Rules
+-keep class io.legere.pdfiumandroid.** { *; }
+-keepclassmembers class io.legere.pdfiumandroid.** { *; }

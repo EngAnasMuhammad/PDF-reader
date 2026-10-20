@@ -36,4 +36,7 @@
     <string name="lang_system">تلقائي حسب النظام</string>
     <string name="lang_english">English</string>
     <string name="lang_arabic">العربية</string>
+
+    <string name="about">حول التطبيق</string>
+    <string name="open_source_licenses">تراخيص المصادر المفتوحة</string>
 </resources>

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pdfreader"
+    namespace = "com.anasdev.pdfreader"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.pdfreader"
+        applicationId = "com.anasdev.pdfreader"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
@@ -71,14 +71,14 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    implementation("com.google.dagger:hilt-android:2.60.1")
-    ksp("com.google.dagger:hilt-android-compiler:2.60.1")
-    implementation("androidx.hilt:hilt-navigation-compose:1.4.0")
-    implementation("androidx.compose.material:material-icons-extended:1.7.8")
-    implementation("com.github.marain87:AndroidPdfViewer:3.2.8")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3-android:2.11.0")
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.android.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.pdfiumandroid)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3.android)
 
-    implementation("androidx.room:room-runtime:2.8.5")
-    implementation("androidx.room:room-ktx:2.8.5")
-    ksp("androidx.room:room-compiler:2.8.5")
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 }
