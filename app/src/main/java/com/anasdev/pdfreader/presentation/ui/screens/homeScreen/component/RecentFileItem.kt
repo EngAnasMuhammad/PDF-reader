@@ -14,12 +14,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.anasdev.pdfreader.data.local.RecentFile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.platform.LocalLocale
 
 @Composable
 fun RecentFileItem(
@@ -27,7 +29,7 @@ fun RecentFileItem(
     onDelete: ()-> Unit,
     onClick: () -> Unit
 ) {
-    val formatter = SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault())
+    val formatter = SimpleDateFormat("MMM dd, yyyy • hh:mm a", LocalLocale.current.platformLocale)
     val dateString = formatter.format(Date(file.timestamp))
 
     ListItem(
@@ -43,7 +45,8 @@ fun RecentFileItem(
         supportingContent = {
             Text(
                 text = dateString,
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 12.dp)
             )
         },
         leadingContent = {

@@ -64,12 +64,6 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
     public void setupLayout(PDFView pdfView) {
         int align, width, height;
         
-        // RTL check
-        boolean isRTL = false;
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            isRTL = context.getResources().getConfiguration().getLayoutDirection() == android.view.View.LAYOUT_DIRECTION_RTL;
-        }
-        
         // Colors dictated by setHandleTheme() called dynamically from Compose
         int bgColor = isThemeDark ? Color.parseColor("#CCFFFFFF") : Color.parseColor("#CC000000"); // 80% opacity
         int textColor = isThemeDark ? Color.BLACK : Color.WHITE;
@@ -88,10 +82,10 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
         if (pdfView.isSwipeVertical()) {
             width = HANDLE_LONG;
             height = HANDLE_SHORT;
-            if (isRTL || inverted) {
+            if (inverted) { // Positioned on left ONLY if inverted is explicitly true
                 align = ALIGN_PARENT_LEFT;
                 background.setCornerRadii(new float[]{0, 0, radius, radius, radius, radius, 0, 0});
-            } else {
+            } else { // Positioned on right ALWAYS in portrait/vertical swipe mode
                 align = ALIGN_PARENT_RIGHT;
                 background.setCornerRadii(new float[]{radius, radius, 0, 0, 0, 0, radius, radius});
             }
@@ -155,7 +149,7 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
             }
             float pdfViewSize = pdfView.isSwipeVertical() ? pdfView.getHeight() : pdfView.getWidth();
             float handleSize = pdfView.isSwipeVertical() ? getHeight() : getWidth();
-            float maxPos = pdfViewSize - handleSize;
+            float maxPos = pdfViewSize - handleSize - 100;
             if (maxPos < minPos) maxPos = minPos;
 
             setPosition(minPos + (maxPos - minPos) * position + relativeHandlerMiddle);
@@ -180,7 +174,7 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
             minPos = pdfView.getDocumentTopPaddingPx();
         }
 
-        float maxPos = pdfViewSize - (pdfView.isSwipeVertical() ? getHeight() : getWidth());
+        float maxPos = pdfViewSize - 100 - (pdfView.isSwipeVertical() ? getHeight() : getWidth());
         if (maxPos < minPos) maxPos = minPos;
 
         if (pos < minPos) {
@@ -282,13 +276,13 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
 
                 if (pdfView.isSwipeVertical()) {
                     setPosition(event.getRawY() - currentPos + relativeHandlerMiddle);
-                    float maxPos = pdfView.getHeight() - getHeight();
+                    float maxPos = pdfView.getHeight() - getHeight() - 100;
                     if (maxPos <= minPos) maxPos = minPos + 1;
                     float offset = (getY() - minPos) / (maxPos - minPos);
                     pdfView.setPositionOffset(offset, false);
                 } else {
                     setPosition(event.getRawX() - currentPos + relativeHandlerMiddle);
-                    float maxPos = pdfView.getWidth() - getWidth();
+                    float maxPos = pdfView.getWidth() - getWidth() - 100;
                     if (maxPos <= minPos) maxPos = minPos + 1;
                     float offset = (getX() - minPos) / (maxPos - minPos);
                     pdfView.setPositionOffset(offset, false);

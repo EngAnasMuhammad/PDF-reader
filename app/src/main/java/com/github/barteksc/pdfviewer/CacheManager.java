@@ -50,6 +50,20 @@ class CacheManager {
 
     public void cachePart(PagePart part) {
         synchronized (passiveActiveLock) {
+            List<PagePart> toRemove = new ArrayList<>();
+            for (PagePart passivePart : passiveCache) {
+                if (passivePart.getPage() == part.getPage() &&
+                        RectF.intersects(passivePart.getPageRelativeBounds(), part.getPageRelativeBounds())) {
+                    toRemove.add(passivePart);
+                }
+            }
+            for (PagePart removePart : toRemove) {
+                passiveCache.remove(removePart);
+                if (removePart.getRenderedBitmap() != null && !removePart.getRenderedBitmap().isRecycled()) {
+                    removePart.getRenderedBitmap().recycle();
+                }
+            }
+
             // If cache too big, remove and recycle
             makeAFreeSpace();
 
@@ -60,6 +74,9 @@ class CacheManager {
 
     public void makeANewSet() {
         synchronized (passiveActiveLock) {
+            if (activeCache.isEmpty()) {
+                return;
+            }
             passiveCache.addAll(activeCache);
             activeCache.clear();
         }
@@ -94,18 +111,16 @@ class CacheManager {
     }
 
     public boolean upPartIfContained(int page, RectF pageRelativeBounds, int toOrder) {
-        PagePart fakePart = new PagePart(page, null, pageRelativeBounds, false, 0);
-
-        PagePart found;
         synchronized (passiveActiveLock) {
-            if ((found = find(passiveCache, fakePart)) != null) {
+            PagePart found = find(passiveCache, page, pageRelativeBounds);
+            if (found != null) {
                 passiveCache.remove(found);
                 found.setCacheOrder(toOrder);
                 activeCache.offer(found);
                 return true;
             }
 
-            return find(activeCache, fakePart) != null;
+            return find(activeCache, page, pageRelativeBounds) != null;
         }
     }
 
@@ -113,10 +128,14 @@ class CacheManager {
      * Return true if already contains the described PagePart
      */
     public boolean containsThumbnail(int page, RectF pageRelativeBounds) {
-        PagePart fakePart = new PagePart(page, null, pageRelativeBounds, true, 0);
         synchronized (thumbnails) {
-            for (PagePart part : thumbnails) {
-                if (part.equals(fakePart)) {
+            for (int i = 0; i < thumbnails.size(); i++) {
+                PagePart part = thumbnails.get(i);
+                if (part.getPage() == page &&
+                        part.getPageRelativeBounds().left == pageRelativeBounds.left &&
+                        part.getPageRelativeBounds().right == pageRelativeBounds.right &&
+                        part.getPageRelativeBounds().top == pageRelativeBounds.top &&
+                        part.getPageRelativeBounds().bottom == pageRelativeBounds.bottom) {
                     return true;
                 }
             }
@@ -138,13 +157,32 @@ class CacheManager {
     }
 
     @Nullable
-    private static PagePart find(PriorityQueue<PagePart> vector, PagePart fakePart) {
+    private static PagePart find(PriorityQueue<PagePart> vector, int page, RectF bounds) {
         for (PagePart part : vector) {
-            if (part.equals(fakePart)) {
+            if (part.getPage() == page &&
+                    part.getPageRelativeBounds().left == bounds.left &&
+                    part.getPageRelativeBounds().right == bounds.right &&
+                    part.getPageRelativeBounds().top == bounds.top &&
+                    part.getPageRelativeBounds().bottom == bounds.bottom) {
                 return part;
             }
         }
         return null;
+    }
+
+    public void getPageParts(List<PagePart> target) {
+        synchronized (passiveActiveLock) {
+            target.clear();
+            target.addAll(passiveCache);
+            target.addAll(activeCache);
+        }
+    }
+
+    public void getThumbnails(List<PagePart> target) {
+        synchronized (thumbnails) {
+            target.clear();
+            target.addAll(thumbnails);
+        }
     }
 
     public List<PagePart> getPageParts() {
@@ -157,7 +195,7 @@ class CacheManager {
 
     public List<PagePart> getThumbnails() {
         synchronized (thumbnails) {
-            return thumbnails;
+            return new ArrayList<>(thumbnails);
         }
     }
 
@@ -186,7 +224,8 @@ class CacheManager {
             if (part1.getCacheOrder() == part2.getCacheOrder()) {
                 return 0;
             }
-            return part1.getCacheOrder() > part2.getCacheOrder() ? 1 : -1;
+            // Evict higher cacheOrder (off-screen preload tiles) first when polling
+            return part1.getCacheOrder() < part2.getCacheOrder() ? 1 : -1;
         }
     }
 

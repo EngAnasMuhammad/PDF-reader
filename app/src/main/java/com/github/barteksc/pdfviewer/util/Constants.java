@@ -21,24 +21,32 @@ public class Constants {
     public static boolean DEBUG_MODE = false;
 
     /** Between 0 and 1, the thumbnails quality (default 0.3). Increasing this value may cause performance decrease */
-    public static float THUMBNAIL_RATIO = 0.3f;
+    public static float THUMBNAIL_RATIO = 0.5f;
 
     /**
      * The size of the rendered parts (default 256)
-     * Tinier : a little bit slower to have the whole page rendered but more reactive.
-     * Bigger : user will have to wait longer to have the first visual results
+     * 512px is the sweet spot. 1024px takes too much raw RAM per tile,
+     * while 256px has too much CPU/JNI overhead. 512 balances RAM vs Speed perfectly.
      */
-    public static float PART_SIZE = 256;
+    public static float PART_SIZE = 512;
 
-    /** Part of document above and below screen that should be preloaded, in dp */
-    public static int PRELOAD_OFFSET = 20;
+    /** 
+     * Part of document above and below screen that should be preloaded, in dp.
+     * 1000dp preloads roughly ~1.5 pages ahead. This prevents the "blank block" 
+     * rendering glitch without devouring memory like 2000dp did.
+     */
+    public static int PRELOAD_OFFSET = 1000;
 
     public static class Cache {
 
-        /** The size of the cache (number of bitmaps kept) */
-        public static int CACHE_SIZE = 120;
+        /** The size of the cache (number of bitmaps kept)
+         * 120 is more than enough for 512px tiles. 
+         * Lowering this drastically drops RAM usage (by clearing old scrolled pages) 
+         * without affecting the current visible/preloaded pages. */
+        public static int CACHE_SIZE = 150;
 
-        public static int THUMBNAILS_CACHE_SIZE = 8;
+        /** Keep thumbnail cache light */
+        public static int THUMBNAILS_CACHE_SIZE = 16;
     }
 
     public static class Pinch {

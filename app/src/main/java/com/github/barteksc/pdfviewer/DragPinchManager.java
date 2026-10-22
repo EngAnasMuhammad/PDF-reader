@@ -48,6 +48,9 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
     private boolean scaling = false;
     private boolean enabled = false;
 
+    private long lastScaleEndTime = 0L;
+    private static final long SCALE_END_COOLDOWN_MS = 120L;
+
     DragPinchManager(PDFView pdfView, AnimationManager animationManager) {
         this.pdfView = pdfView;
         this.animationManager = animationManager;
@@ -182,6 +185,9 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
 
     @Override
     public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+        if (scaling || (e2 != null && e2.getPointerCount() > 1) || (android.os.SystemClock.uptimeMillis() - lastScaleEndTime) < SCALE_END_COOLDOWN_MS) {
+            return true;
+        }
         scrolling = true;
         if (pdfView.isZooming() || pdfView.isSwipeEnabled()) {
             pdfView.moveRelativeTo(-distanceX, -distanceY);
@@ -226,18 +232,20 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
         int xOffset = (int) pdfView.getCurrentXOffset();
         int yOffset = (int) pdfView.getCurrentYOffset();
 
-        float minX, minY;
+        float minX, minY, maxY;
         PdfFile pdfFile = pdfView.pdfFile;
         if (pdfView.isSwipeVertical()) {
             minX = -(pdfView.toCurrentScale(pdfFile.getMaxPageWidth()) - pdfView.getWidth());
             minY = -(pdfFile.getDocLen(pdfView.getZoom()) - pdfView.getHeight());
+            maxY = pdfView.getDocumentTopPaddingPx();
         } else {
             minX = -(pdfFile.getDocLen(pdfView.getZoom()) - pdfView.getWidth());
             minY = -(pdfView.toCurrentScale(pdfFile.getMaxPageHeight()) - pdfView.getHeight());
+            maxY = 0;
         }
 
         animationManager.startFlingAnimation(xOffset, yOffset, (int) (velocityX), (int) (velocityY),
-                (int) minX, 0, (int) minY, 0);
+                (int) minX, 0, (int) minY, (int) maxY);
         return true;
     }
 
@@ -284,6 +292,7 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
     @Override
     public boolean onScaleBegin(ScaleGestureDetector detector) {
         scaling = true;
+        scrolling = false;
         return true;
     }
 
@@ -292,6 +301,8 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
         pdfView.loadPages();
         hideHandle();
         scaling = false;
+        scrolling = false;
+        lastScaleEndTime = android.os.SystemClock.uptimeMillis();
     }
 
     @Override

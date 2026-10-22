@@ -248,6 +248,15 @@ public class PDFView extends RelativeLayout {
     /** Holds info whether view has been added to layout and has width and height */
     private boolean hasSize = false;
 
+    /** Paint object for rendering white background placeholders for pages */
+    private final Paint pageBackgroundPaint = new Paint();
+
+    /** Reusable drawing rects and lists to prevent allocation during onDraw */
+    private final Rect partSrcRect = new Rect();
+    private final RectF partDstRect = new RectF();
+    private final List<PagePart> pagePartsBuffer = new ArrayList<>(150);
+    private final List<PagePart> thumbnailsBuffer = new ArrayList<>(16);
+
     /** Holds last used Configurator that should be loaded when view has size */
     private Configurator waitingDocumentConfigurator;
 
@@ -255,7 +264,7 @@ public class PDFView extends RelativeLayout {
     public PDFView(Context context, AttributeSet set) {
         super(context, set);
 
-        renderingHandlerThread = new HandlerThread("PDF renderer");
+        renderingHandlerThread = new HandlerThread("PDF renderer", android.os.Process.THREAD_PRIORITY_BACKGROUND);
 
         if (isInEditMode()) {
             return;
@@ -267,11 +276,17 @@ public class PDFView extends RelativeLayout {
         pagesLoader = new PagesLoader(this);
 
         paint = new Paint();
+        paint.setFilterBitmap(true);
+        paint.setAntiAlias(true);
         debugPaint = new Paint();
         debugPaint.setStyle(Style.STROKE);
 
+        pageBackgroundPaint.setColor(Color.WHITE);
+        pageBackgroundPaint.setStyle(Style.FILL);
+
         pdfiumCore = new PdfiumCore();
         textSelectionManager = new PdfTextSelectionManager(this);
+        setBackgroundColor(Color.WHITE);
         setWillNotDraw(false);
     }
 
@@ -302,7 +317,8 @@ public class PDFView extends RelativeLayout {
         }
 
         page = pdfFile.determineValidPageNumberFrom(page);
-        float offset = page == 0 ? 0 : -pdfFile.getPageOffset(page, zoom);
+        float offset = -pdfFile.getPageOffset(page, zoom);
+        if (page == 0) offset += documentTopPaddingPx;
         if (swipeVertical) {
             if (withAnimation) {
                 animationManager.startYAnimation(currentYOffset, offset);
@@ -393,19 +409,13 @@ public class PDFView extends RelativeLayout {
 
     public void setNightMode(boolean nightMode) {
         this.nightMode = nightMode;
-        if (nightMode) {
-            ColorMatrix colorMatrixInverted =
-                    new ColorMatrix(new float[]{
-                            -1, 0, 0, 0, 255,
-                            0, -1, 0, 0, 255,
-                            0, 0, -1, 0, 255,
-                            0, 0, 0, 1, 0});
-
-            ColorMatrixColorFilter filter = new ColorMatrixColorFilter(colorMatrixInverted);
-            paint.setColorFilter(filter);
-        } else {
-            paint.setColorFilter(null);
-        }
+        // DO NOT apply the inverted ColorFilter paint here! 
+        // Applying an inverted matrix in Java forces the C++ engine to render tiles, 
+        // then the Java Paint has to re-calculate every pixel to invert it, 
+        // and THEN Compose applies its own Dimmed/Sepia matrix on top. 
+        // This double-filtering destroys rendering performance.
+        // We let Compose handle the color matrix universally on the GPU layer!
+        paint.setColorFilter(null);
     }
 
     void enableDoubletap(boolean enableDoubletap) {
@@ -555,9 +565,9 @@ public class PDFView extends RelativeLayout {
         }
 
         if (swipeVertical) {
-            if (direction < 0 && currentYOffset < 0) {
+            if (direction < 0 && currentYOffset < documentTopPaddingPx) {
                 return true;
-            } else if (direction > 0 && currentYOffset + pdfFile.getDocLen(zoom) > getHeight()) {
+            } else if (direction > 0 && currentYOffset + pdfFile.getDocLen(zoom) + documentTopPaddingPx > getHeight()) {
                 return true;
             }
         } else {
@@ -612,7 +622,12 @@ public class PDFView extends RelativeLayout {
 
         Drawable bg = getBackground();
         if (bg == null) {
-            canvas.drawColor(nightMode ? Color.BLACK : Color.WHITE);
+            // Draw pure white background. Since Compose is wrapping this whole View in a 
+            // graphicsLayer { colorFilter = ... }, the raw white pixels here will instantly 
+            // be tinted into Sepia/Dimmed Dark before hitting the screen.
+            // This guarantees the blank spaces exactly match the pages, 
+            // eliminating any "black block" flashing!
+            canvas.drawColor(Color.WHITE);
         } else {
             bg.draw(canvas);
         }
@@ -630,14 +645,49 @@ public class PDFView extends RelativeLayout {
         float currentYOffset = this.currentYOffset;
         canvas.translate(currentXOffset, currentYOffset);
 
-        // Draws thumbnails
-        for (PagePart part : cacheManager.getThumbnails()) {
-            drawPart(canvas, part);
+        // Draws white page placeholders before rendering bitmaps
+        if (pdfFile != null) {
+            // Find the first and last visible page at the current scroll offset
+            int firstPage = pdfFile.getPageAtOffset(-(isSwipeVertical() ? currentYOffset : currentXOffset), zoom);
+            int lastPage = pdfFile.getPageAtOffset(-(isSwipeVertical() ? currentYOffset - getHeight() : currentXOffset - getWidth()), zoom);
 
+            for (int page = Math.max(0, firstPage - 1); page <= Math.min(pdfFile.getPagesCount() - 1, lastPage + 1); page++) {
+                SizeF pageSize = pdfFile.getPageSize(page);
+                float pageOffset = pdfFile.getPageOffset(page, zoom);
+                float secondaryOffset = pdfFile.getSecondaryPageOffset(page, zoom);
+                float width = pageSize.getWidth() * zoom;
+                float height = pageSize.getHeight() * zoom;
+
+                if (isSwipeVertical()) {
+                    canvas.drawRect(
+                        secondaryOffset,
+                        pageOffset,
+                        secondaryOffset + width,
+                        pageOffset + height,
+                        pageBackgroundPaint
+                    );
+                } else {
+                    canvas.drawRect(
+                        pageOffset,
+                        secondaryOffset,
+                        pageOffset + width,
+                        secondaryOffset + height,
+                        pageBackgroundPaint
+                    );
+                }
+            }
         }
 
-        // Draws parts
-        for (PagePart part : cacheManager.getPageParts()) {
+        // Draws thumbnails without object allocations
+        cacheManager.getThumbnails(thumbnailsBuffer);
+        for (int i = 0; i < thumbnailsBuffer.size(); i++) {
+            drawPart(canvas, thumbnailsBuffer.get(i));
+        }
+
+        // Draws parts without object allocations
+        cacheManager.getPageParts(pagePartsBuffer);
+        for (int i = 0; i < pagePartsBuffer.size(); i++) {
+            PagePart part = pagePartsBuffer.get(i);
             drawPart(canvas, part);
             if (callbacks.getOnDrawAll() != null
                     && !onDrawPagesNums.contains(part.getPage())) {
@@ -645,8 +695,8 @@ public class PDFView extends RelativeLayout {
             }
         }
 
-        for (Integer page : onDrawPagesNums) {
-            drawWithListener(canvas, page, callbacks.getOnDrawAll());
+        for (int i = 0; i < onDrawPagesNums.size(); i++) {
+            drawWithListener(canvas, onDrawPagesNums.get(i), callbacks.getOnDrawAll());
         }
         onDrawPagesNums.clear();
 
@@ -708,8 +758,7 @@ public class PDFView extends RelativeLayout {
         }
         canvas.translate(localTranslationX, localTranslationY);
 
-        Rect srcRect = new Rect(0, 0, renderedBitmap.getWidth(),
-                renderedBitmap.getHeight());
+        partSrcRect.set(0, 0, renderedBitmap.getWidth(), renderedBitmap.getHeight());
 
         float offsetX = toCurrentScale(pageRelativeBounds.left * size.getWidth());
         float offsetY = toCurrentScale(pageRelativeBounds.top * size.getHeight());
@@ -719,24 +768,24 @@ public class PDFView extends RelativeLayout {
         // If we use float values for this rectangle, there will be
         // a possible gap between page parts, especially when
         // the zoom level is high.
-        RectF dstRect = new RectF((int) offsetX, (int) offsetY,
+        partDstRect.set((int) offsetX, (int) offsetY,
                 (int) (offsetX + width),
                 (int) (offsetY + height));
 
         // Check if bitmap is in the screen
         float translationX = currentXOffset + localTranslationX;
         float translationY = currentYOffset + localTranslationY;
-        if (translationX + dstRect.left >= getWidth() || translationX + dstRect.right <= 0 ||
-                translationY + dstRect.top >= getHeight() || translationY + dstRect.bottom <= 0) {
+        if (translationX + partDstRect.left >= getWidth() || translationX + partDstRect.right <= 0 ||
+                translationY + partDstRect.top >= getHeight() || translationY + partDstRect.bottom <= 0) {
             canvas.translate(-localTranslationX, -localTranslationY);
             return;
         }
 
-        canvas.drawBitmap(renderedBitmap, srcRect, dstRect, paint);
+        canvas.drawBitmap(renderedBitmap, partSrcRect, partDstRect, paint);
 
         if (Constants.DEBUG_MODE) {
             debugPaint.setColor(part.getPage() % 2 == 0 ? Color.RED : Color.BLUE);
-            canvas.drawRect(dstRect, debugPaint);
+            canvas.drawRect(partDstRect, debugPaint);
         }
 
         // Restore the canvas position
@@ -851,14 +900,15 @@ public class PDFView extends RelativeLayout {
             }
 
             // Check Y offset
-            float contentHeight = pdfFile.getDocLen(zoom);
+            float contentHeight = pdfFile.getDocLen(zoom) + documentTopPaddingPx;
             if (contentHeight < getHeight()) { // whole document height visible on screen
-                offsetY = (getHeight() - contentHeight) / 2;
+                offsetY = (getHeight() - contentHeight) / 2 + documentTopPaddingPx;
             } else {
-                if (offsetY > 0) { // top visible
-                    offsetY = 0;
-                } else if (offsetY + contentHeight < getHeight()) { // bottom visible
-                    offsetY = -contentHeight + getHeight();
+                float maxTop = documentTopPaddingPx;
+                if (offsetY > maxTop) { // top visible
+                    offsetY = maxTop;
+                } else if (offsetY + contentHeight < getHeight() + documentTopPaddingPx) { // bottom visible
+                    offsetY = -(contentHeight - documentTopPaddingPx) + getHeight();
                 }
             }
 

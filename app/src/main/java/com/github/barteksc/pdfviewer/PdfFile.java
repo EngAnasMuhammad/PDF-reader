@@ -210,7 +210,7 @@ public class PdfFile {
     }
 
     private void prepareDocLen() {
-        float length = topPaddingPx;
+        float length = 0;
         for (int i = 0; i < getPagesCount(); i++) {
             SizeF pageSize = pageSizes.get(i);
             length += isVertical ? pageSize.getHeight() : pageSize.getWidth();
@@ -225,7 +225,7 @@ public class PdfFile {
 
     private void preparePagesOffset() {
         pageOffsets.clear();
-        float offset = topPaddingPx;
+        float offset = 0;
         for (int i = 0; i < getPagesCount(); i++) {
             SizeF pageSize = pageSizes.get(i);
             float size = isVertical ? pageSize.getHeight() : pageSize.getWidth();
