@@ -46,6 +46,7 @@ class DecodingAsyncTask extends AsyncTask<Void, Void, Throwable> {
     private boolean isAutoSpacingEnabled;
     private boolean isFitEachPage;
     private int documentTopPaddingPx;
+    private int documentBottomPaddingPx;
 
     DecodingAsyncTask(DocumentSource docSource, String password, int[] userPages, PDFView pdfView, PdfiumCore pdfiumCore) {
         this.docSource = docSource;
@@ -64,6 +65,7 @@ class DecodingAsyncTask extends AsyncTask<Void, Void, Throwable> {
         this.isAutoSpacingEnabled = pdfView.isAutoSpacingEnabled();
         this.isFitEachPage = pdfView.isFitEachPage();
         this.documentTopPaddingPx = pdfView.getDocumentTopPaddingPx();
+        this.documentBottomPaddingPx = pdfView.getDocumentBottomPaddingPx();
     }
 
     @Override
@@ -74,7 +76,7 @@ class DecodingAsyncTask extends AsyncTask<Void, Void, Throwable> {
                 PdfDocument pdfDocument = docSource.createDocument(context, pdfiumCore, password);
                 pdfFile = new PdfFile(pdfiumCore, pdfDocument, pageFitPolicy, viewSize,
                         userPages, isSwipeVertical, spacingPx, isAutoSpacingEnabled,
-                        isFitEachPage, documentTopPaddingPx);
+                        isFitEachPage, documentTopPaddingPx, documentBottomPaddingPx);
                 return null;
             } else {
                 return new NullPointerException("pdfView == null");

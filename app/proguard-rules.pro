@@ -1,36 +1,19 @@
-# Add project specific ProGuard rules here.
-# By default, the flags in this file are appended to flags specified
-# in C:\Users\anas1\AppData\Local\Android\Sdk\tools\proguard\proguard-android.txt
-# You can edit the include flags and comments in this file.
-
-# Room Keep Rules
+# Room
 -keep class * extends androidx.room.RoomDatabase
 -dontwarn androidx.room.paging.**
--keepclassmembers class * {
-    @androidx.room.* <fields>;
-    @androidx.room.* <methods>;
-}
 
-# Hilt & Dagger Keep Rules
--keep class dagger.hilt.** { *; }
--keep class * extends dagger.hilt.** { *; }
--keepclassmembers,allowobfuscation class * {
-    @dagger.hilt.** *;
-}
-
-# AndroidPdfViewer Keep Rules (Prevents stripping PDF engine & JNI bindings)
+# AndroidPdfViewer & PDFium Native JNI Bindings
+# (Native C++ JNI callbacks cannot be traced by R8)
 -keep class com.github.barteksc.pdfviewer.** { *; }
--keepclassmembers class com.github.barteksc.pdfviewer.** { *; }
 -keep class com.shockwave.** { *; }
--keepclassmembers class com.shockwave.** { *; }
-
-# Kotlin Coroutines
--keepclassmembers class kotlinx.coroutines.** { *; }
-
-# Keep App Data & Domain Models
--keep class com.anasdev.pdfreader.domain.model.** { *; }
--keep class com.anasdev.pdfreader.data.local.** { *; }
-
-# PDFium Native Bindings Keep Rules
 -keep class io.legere.pdfiumandroid.** { *; }
--keepclassmembers class io.legere.pdfiumandroid.** { *; }
+
+# PDFBox-Android (Targeted rules so R8 can strip unused PDFBox modules)
+-dontwarn org.bouncycastle.**
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+-dontwarn com.tom_roush.pdfbox.**
+-keep class com.tom_roush.pdfbox.pdmodel.encryption.*SecurityHandler {
+    <init>(...);
+}
+-keep class com.tom_roush.pdfbox.android.PDFBoxResourceLoader { *; }

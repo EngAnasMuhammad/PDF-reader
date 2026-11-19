@@ -2,6 +2,7 @@ package com.anasdev.pdfreader.di
 
 import android.content.Context
 import androidx.room.Room
+import com.anasdev.pdfreader.data.local.AnnotationDao
 import com.anasdev.pdfreader.data.local.AppDatabase
 import com.anasdev.pdfreader.data.local.RecentFileDao
 import dagger.Module
@@ -24,7 +25,7 @@ object DatabaseModule {
             klass = AppDatabase::class.java,
             name = "App database"
         )
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .build()
     }
 
@@ -33,5 +34,16 @@ object DatabaseModule {
     fun provideRecentFileDao(database: AppDatabase): RecentFileDao {
         return database.getRecentFileDao()
     }
-}
 
+    @Provides
+    @Singleton
+    fun provideAnnotationDao(database: AppDatabase): AnnotationDao {
+        return database.annotationDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCollectionDao(database: AppDatabase): com.anasdev.pdfreader.data.local.CollectionDao {
+        return database.collectionDao()
+    }
+}

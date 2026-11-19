@@ -10,8 +10,11 @@ interface PdfRepository {
     suspend fun insertRecentFile(file: RecentFile)
     suspend fun updatePage(uriString: String, page: Int)
     suspend fun deleteRecentFile(file: RecentFile)
+    suspend fun deleteRecentFileByUri(uriString: String)
     suspend fun clearAllHistory()
 
     fun takePersistableUriPermission(uri: Uri): Boolean
     fun extractFileName(uri: Uri): String
+    suspend fun isUriAccessible(uri: Uri): Boolean
+    suspend fun pruneInaccessibleRecentFiles()
 }

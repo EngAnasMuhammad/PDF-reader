@@ -24,6 +24,12 @@ interface RecentFileDao {
     @Query("SELECT * FROM recent_files WHERE uri = :uri LIMIT 1")
     suspend fun getFileByUri(uri: String): RecentFile?
 
+    @Query("SELECT * FROM recent_files ORDER BY timestamp DESC LIMIT 20")
+    suspend fun getRecentFilesList(): List<RecentFile>
+
+    @Query("DELETE FROM recent_files WHERE uri = :uri")
+    suspend fun deleteRecentFileByUri(uri: String)
+
     @Query("UPDATE recent_files SET lastPage = :lastPage WHERE uri = :uri")
     suspend fun updatePage(uri: String,lastPage: Int)
 }

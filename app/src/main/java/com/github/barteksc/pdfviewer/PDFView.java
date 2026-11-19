@@ -37,6 +37,9 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.widget.RelativeLayout;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import com.github.barteksc.pdfviewer.exception.PageRenderingException;
 import com.github.barteksc.pdfviewer.link.DefaultLinkHandler;
 import com.github.barteksc.pdfviewer.link.LinkHandler;
@@ -110,6 +113,7 @@ public class PDFView extends RelativeLayout {
     private float maxZoom = DEFAULT_MAX_SCALE;
 
     private int documentTopPaddingPx = 0;
+    private int documentBottomPaddingPx = 0;
 
     /**
      * START - scrolling in first page direction
@@ -367,7 +371,12 @@ public class PDFView extends RelativeLayout {
     public float getPositionOffset() {
         float offset;
         if (swipeVertical) {
-            offset = -currentYOffset / (pdfFile.getDocLen(zoom) - getHeight());
+            float totalSpan = pdfFile.getDocLen(zoom) - getHeight() + documentTopPaddingPx + documentBottomPaddingPx;
+            if (totalSpan <= 0) {
+                offset = 0;
+            } else {
+                offset = (documentTopPaddingPx - currentYOffset) / totalSpan;
+            }
         } else {
             offset = -currentXOffset / (pdfFile.getDocLen(zoom) - getWidth());
         }
@@ -381,7 +390,9 @@ public class PDFView extends RelativeLayout {
      */
     public void setPositionOffset(float progress, boolean moveHandle) {
         if (swipeVertical) {
-            moveTo(currentXOffset, (-pdfFile.getDocLen(zoom) + getHeight()) * progress, moveHandle);
+            float minBottom = getHeight() - documentBottomPaddingPx - pdfFile.getDocLen(zoom);
+            float targetY = documentTopPaddingPx + (minBottom - documentTopPaddingPx) * progress;
+            moveTo(currentXOffset, targetY, moveHandle);
         } else {
             moveTo((-pdfFile.getDocLen(zoom) + getWidth()) * progress, currentYOffset, moveHandle);
         }
@@ -567,7 +578,7 @@ public class PDFView extends RelativeLayout {
         if (swipeVertical) {
             if (direction < 0 && currentYOffset < documentTopPaddingPx) {
                 return true;
-            } else if (direction > 0 && currentYOffset + pdfFile.getDocLen(zoom) + documentTopPaddingPx > getHeight()) {
+            } else if (direction > 0 && currentYOffset + pdfFile.getDocLen(zoom) + documentBottomPaddingPx > getHeight()) {
                 return true;
             }
         } else {
@@ -900,15 +911,16 @@ public class PDFView extends RelativeLayout {
             }
 
             // Check Y offset
-            float contentHeight = pdfFile.getDocLen(zoom) + documentTopPaddingPx;
+            float contentHeight = pdfFile.getDocLen(zoom) + documentTopPaddingPx + documentBottomPaddingPx;
             if (contentHeight < getHeight()) { // whole document height visible on screen
                 offsetY = (getHeight() - contentHeight) / 2 + documentTopPaddingPx;
             } else {
                 float maxTop = documentTopPaddingPx;
+                float minBottom = getHeight() - documentBottomPaddingPx - pdfFile.getDocLen(zoom);
                 if (offsetY > maxTop) { // top visible
                     offsetY = maxTop;
-                } else if (offsetY + contentHeight < getHeight() + documentTopPaddingPx) { // bottom visible
-                    offsetY = -(contentHeight - documentTopPaddingPx) + getHeight();
+                } else if (offsetY < minBottom) { // bottom visible
+                    offsetY = minBottom;
                 }
             }
 
@@ -1216,6 +1228,133 @@ public class PDFView extends RelativeLayout {
         return pdfFile.getPageAtOffset(pdfFile.getDocLen(zoom) * positionOffset, zoom);
     }
 
+    /**
+     * Maps screen touch coordinates (x, y) in pixels relative to this PDFView
+     * to normalized coordinates (0.0f .. 1.0f) relative to the touched PDF page.
+     *
+     * Accounts for zoom, currentXOffset, currentYOffset, vertical vs. horizontal swipe,
+     * page spacing, and documentTopPadding.
+     *
+     * @param screenX screen touch X in pixels relative to this PDFView
+     * @param screenY screen touch Y in pixels relative to this PDFView
+     * @return PagePoint containing the pageIndex, normalizedX, and normalizedY if the point
+     *         falls on a page; or null if the touch is in the blank margin or spacing outside any page.
+     */
+    public PagePoint mapScreenPointToPage(float screenX, float screenY) {
+        if (pdfFile == null || recycled || state != State.SHOWN) {
+            return null;
+        }
+
+        // Map screen touch coordinates to canvas coordinate space by inverting canvas translation
+        float mappedX = screenX - currentXOffset;
+        float mappedY = screenY - currentYOffset;
+
+        int pagesCount = pdfFile.getPagesCount();
+        if (pagesCount <= 0) {
+            return null;
+        }
+
+        // Fast lookup of candidate page along the primary scroll axis
+        int candidatePage = pdfFile.getPageAtOffset(swipeVertical ? mappedY : mappedX, zoom);
+
+        // Check candidate page first
+        PagePoint result = checkPageHit(candidatePage, mappedX, mappedY);
+        if (result != null) {
+            return result;
+        }
+
+        // If not on candidate page (e.g. boundary conditions or small zoom levels),
+        // search currently visible pages
+        int firstPage = pdfFile.getPageAtOffset(-(isSwipeVertical() ? currentYOffset : currentXOffset), zoom);
+        int lastPage = pdfFile.getPageAtOffset(-(isSwipeVertical() ? currentYOffset - getHeight() : currentXOffset - getWidth()), zoom);
+
+        int checkStart = Math.min(candidatePage, Math.max(0, firstPage - 1));
+        int checkEnd = Math.max(candidatePage, Math.min(pagesCount - 1, lastPage + 1));
+
+        for (int p = checkStart; p <= checkEnd; p++) {
+            if (p == candidatePage) continue;
+            result = checkPageHit(p, mappedX, mappedY);
+            if (result != null) {
+                return result;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Maps normalized page coordinates (0f..1f) on a given page to screen coordinates in pixels relative to this PDFView.
+     *
+     * @param pageIndex 0-based page index
+     * @param normX normalized X coordinate on page (0f..1f)
+     * @param normY normalized Y coordinate on page (0f..1f)
+     * @return PointF with screen coordinates, or null if page is invalid or document not loaded.
+     */
+    public PointF mapPagePointToScreen(int pageIndex, float normX, float normY) {
+        if (pdfFile == null || recycled || state != State.SHOWN) {
+            return null;
+        }
+        if (pageIndex < 0 || pageIndex >= pdfFile.getPagesCount()) {
+            return null;
+        }
+
+        SizeF pageSize = pdfFile.getScaledPageSize(pageIndex, zoom);
+        float pageWidth = pageSize.getWidth();
+        float pageHeight = pageSize.getHeight();
+
+        if (pageWidth <= 0 || pageHeight <= 0) {
+            return null;
+        }
+
+        float pageX, pageY;
+        if (swipeVertical) {
+            pageX = pdfFile.getSecondaryPageOffset(pageIndex, zoom);
+            pageY = pdfFile.getPageOffset(pageIndex, zoom);
+        } else {
+            pageX = pdfFile.getPageOffset(pageIndex, zoom);
+            pageY = pdfFile.getSecondaryPageOffset(pageIndex, zoom);
+        }
+
+        float screenX = pageX + (normX * pageWidth) + currentXOffset;
+        float screenY = pageY + (normY * pageHeight) + currentYOffset;
+
+        return new PointF(screenX, screenY);
+    }
+
+    private PagePoint checkPageHit(int page, float mappedX, float mappedY) {
+        if (page < 0 || page >= pdfFile.getPagesCount()) {
+            return null;
+        }
+
+        SizeF pageSize = pdfFile.getScaledPageSize(page, zoom);
+        float pageWidth = pageSize.getWidth();
+        float pageHeight = pageSize.getHeight();
+
+        if (pageWidth <= 0 || pageHeight <= 0) {
+            return null;
+        }
+
+        float pageX, pageY;
+        if (swipeVertical) {
+            pageX = pdfFile.getSecondaryPageOffset(page, zoom);
+            pageY = pdfFile.getPageOffset(page, zoom);
+        } else {
+            pageX = pdfFile.getPageOffset(page, zoom);
+            pageY = pdfFile.getSecondaryPageOffset(page, zoom);
+        }
+
+        if (mappedX >= pageX && mappedX <= pageX + pageWidth &&
+            mappedY >= pageY && mappedY <= pageY + pageHeight) {
+            float localX = mappedX - pageX;
+            float localY = mappedY - pageY;
+            float normX = Math.max(0f, Math.min(1f, localX / pageWidth));
+            float normY = Math.max(0f, Math.min(1f, localY / pageHeight));
+            return new PagePoint(page, normX, normY);
+        }
+
+        return null;
+    }
+
     public float getMinZoom() {
         return minZoom;
     }
@@ -1286,6 +1425,10 @@ public class PDFView extends RelativeLayout {
 
     public int getDocumentTopPaddingPx() {
         return documentTopPaddingPx;
+    }
+
+    public int getDocumentBottomPaddingPx() {
+        return documentBottomPaddingPx;
     }
 
     public boolean isAutoSpacingEnabled() {
@@ -1388,6 +1531,100 @@ public class PDFView extends RelativeLayout {
 
     public PdfTextSelectionManager getTextSelectionManager() {
         return textSelectionManager;
+    }
+
+    /**
+     * Returns normalized text selection rectangles grouped by page index (0f..1f range relative to page width/height).
+     */
+    public Map<Integer, List<RectF>> getNormalizedSelectionRectsByPage() {
+        if (textSelectionManager == null || !textSelectionManager.isSelectionActive() || pdfFile == null) {
+            return Collections.emptyMap();
+        }
+
+        int pageIndex = textSelectionManager.getSelectedPageIndex();
+        int start = textSelectionManager.getStartCharIndex();
+        int end = textSelectionManager.getEndCharIndex();
+        if (pageIndex < 0 || start < 0 || end < 0) {
+            return Collections.emptyMap();
+        }
+
+        int count = (end - start) + 1;
+        List<RectF> pdfRects = getTextPageRects(pageIndex, start, count);
+        if (pdfRects == null || pdfRects.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        com.github.barteksc.pdfviewer.util.Size originalSize = pdfFile.getOriginalPageSize(pageIndex);
+        float origW = originalSize.getWidth();
+        float origH = originalSize.getHeight();
+        if (origW <= 0f || origH <= 0f) {
+            return Collections.emptyMap();
+        }
+
+        // Merge adjacent character boxes on the same line in PDF coordinate space
+        List<RectF> mergedPdfRects = new ArrayList<>();
+        RectF currentLine = null;
+
+        for (RectF rect : pdfRects) {
+            if (currentLine == null) {
+                currentLine = new RectF(rect);
+            } else {
+                float lineCenterY = currentLine.centerY();
+                float rectCenterY = rect.centerY();
+                float lineHeight = Math.max(Math.abs(currentLine.height()), Math.abs(rect.height()));
+
+                if (Math.abs(lineCenterY - rectCenterY) < lineHeight * 0.6f) {
+                    currentLine.left = Math.min(currentLine.left, rect.left);
+                    currentLine.right = Math.max(currentLine.right, rect.right);
+                    currentLine.top = Math.max(currentLine.top, rect.top);
+                    currentLine.bottom = Math.min(currentLine.bottom, rect.bottom);
+                } else {
+                    mergedPdfRects.add(currentLine);
+                    currentLine = new RectF(rect);
+                }
+            }
+        }
+        if (currentLine != null) {
+            mergedPdfRects.add(currentLine);
+        }
+
+        List<RectF> normalizedRects = new ArrayList<>(mergedPdfRects.size());
+        for (RectF r : mergedPdfRects) {
+            float minX = Math.min(r.left, r.right);
+            float maxX = Math.max(r.left, r.right);
+            float minY = Math.min(r.top, r.bottom);
+            float maxY = Math.max(r.top, r.bottom);
+
+            // In PDFium coordinates: (0,0) is bottom-left, y goes up
+            // Normalized page coordinates: (0,0) is top-left, y goes down
+            float normLeft = (minX / origW);
+            float normRight = (maxX / origW);
+            float normTop = (origH - maxY) / origH;
+            float normBottom = (origH - minY) / origH;
+
+            float clampedLeft = Math.max(0f, Math.min(1f, normLeft));
+            float clampedTop = Math.max(0f, Math.min(1f, normTop));
+            float clampedRight = Math.max(0f, Math.min(1f, normRight));
+            float clampedBottom = Math.max(0f, Math.min(1f, normBottom));
+
+            if (clampedRight > clampedLeft && clampedBottom > clampedTop) {
+                normalizedRects.add(new RectF(clampedLeft, clampedTop, clampedRight, clampedBottom));
+            }
+        }
+
+        if (normalizedRects.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<Integer, List<RectF>> map = new HashMap<>();
+        map.put(pageIndex, normalizedRects);
+        return map;
+    }
+
+    public void clearTextSelection() {
+        if (textSelectionManager != null) {
+            textSelectionManager.clearSelection();
+        }
     }
 
     public float getPageOffset(int pageIndex, float zoom) {
@@ -1635,6 +1872,12 @@ public class PDFView extends RelativeLayout {
         // Add document top padding method to push the first page down
         public Configurator documentTopPadding(int paddingDp) {
             PDFView.this.documentTopPaddingPx = Util.getDP(getContext(), paddingDp);
+            return this;
+        }
+
+        // Add document bottom padding method to push the last page up
+        public Configurator documentBottomPadding(int paddingDp) {
+            PDFView.this.documentBottomPaddingPx = Util.getDP(getContext(), paddingDp);
             return this;
         }
 

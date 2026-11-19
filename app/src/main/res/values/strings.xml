@@ -38,4 +38,118 @@
 
     <string name="about">About</string>
     <string name="open_source_licenses">Open Source Licenses</string>
+
+    <string name="edit">Edit</string>
+    <string name="done">Done</string>
+    <string name="pen">Pen</string>
+    <string name="highlighter">Highlighter</string>
+    <string name="eraser">Eraser</string>
+    <string name="pan_mode">Pan</string>
+    <string name="undo">Undo</string>
+    <string name="redo">Redo</string>
+    <string name="stroke_width">Thickness</string>
+    <string name="color">Color</string>
+    <string name="annotate">Annotate</string>
+    <string name="discard_edits_title">Discard changes?</string>
+    <string name="discard_edits_message">You have unsaved annotations. Do you want to discard them?</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep Editing</string>
+
+    <string name="save_copy">Save Copy</string>
+    <string name="save_as">Save As…</string>
+    <string name="saving_pdf">Saving PDF…</string>
+    <string name="saved_to_downloads">Saved to Downloads: %1$s</string>
+    <string name="saved_successfully">PDF saved successfully</string>
+    <string name="open_action">Open</string>
+    <string name="export_failed">Failed to export PDF</string>
+
+    <string name="hide_toolbar">Hide toolbar</string>
+    <string name="show_toolbar">Show toolbar</string>
+    <string name="stroke_style">Stroke style</string>
+
+    <string name="close">Close</string>
+    <string name="file_not_available">File no longer available</string>
+    <string name="file_not_available_description">This file may have been moved, renamed, or deleted externally.</string>
+    <string name="back_to_home">Back to Home</string>
+
+    <string name="text_tool">Text</string>
+    <string name="add_text">Add Text</string>
+    <string name="edit_text">Edit Text</string>
+    <string name="text_placeholder">Type text here…</string>
+    <string name="text_size">Font Size</string>
+    <string name="delete_annotation">Delete</string>
+
+    <!-- Text Highlight & Save Copy -->
+    <string name="annotations_saved_in_app">Annotations saved in app</string>
+    <string name="color_yellow">Yellow</string>
+    <string name="color_green">Green</string>
+    <string name="color_pink">Pink</string>
+    <string name="color_blue">Blue</string>
+
+    <!-- Collections -->
+    <string name="collections">Collections</string>
+    <string name="recent">Recent</string>
+    <string name="new_collection">New</string>
+    <string name="create_collection">Create Collection</string>
+    <string name="collection_name">Collection Name</string>
+    <string name="collection_name_hint">e.g. Study, Work</string>
+    <string name="delete_collection">Delete Collection</string>
+    <string name="delete_collection_message">Are you sure you want to delete \"%1$s\"? The PDF files will not be deleted from your device.</string>
+    <string name="edit_collection_files">Edit Files</string>
+    <string name="manage_files">Manage Files</string>
+    <string name="no_files_in_collection">No files in this collection</string>
+    <string name="add_files">Add Files</string>
+    <string name="add_from_device">Add from Device</string>
+    <string name="files_count">%1$d files</string>
+    <string name="remove_from_collection">Remove from collection</string>
+
+    <!-- Digital Signature -->
+    <string name="signature_tool">Signature</string>
+    <string name="saved_signature_title">Saved Signature</string>
+    <string name="create_signature_title">Create Signature</string>
+    <string name="use_signature">Use Signature</string>
+    <string name="create_new_signature">Create New</string>
+    <string name="clear_signature">Clear</string>
+    <string name="sign_here_hint">Sign here</string>
+    <string name="delete_signature">Delete Signature</string>
+    <string name="save">Save</string>
+
+    <!-- Offline Tools -->
+    <string name="tool_images_to_pdf_title">Images to PDF</string>
+    <string name="tool_images_to_pdf_subtitle">From gallery</string>
+    <string name="tool_merge_pdfs_title">Merge PDFs</string>
+    <string name="tool_merge_pdfs_subtitle">Join into one</string>
+    <string name="coming_soon">Coming soon</string>
+
+    <!-- Images to PDF Tool -->
+    <string name="pdf_file_name">File Name</string>
+    <string name="pdf_file_name_hint">e.g. Images_Document</string>
+    <string name="page_number">Page %1$d</string>
+    <string name="add_more_images">Add More</string>
+    <string name="create_pdf">Create PDF</string>
+    <string name="move_up">Move Up</string>
+    <string name="move_down">Move Down</string>
+    <string name="remove_image">Remove</string>
+    <string name="converting_image_progress">Converting image %1$d of %2$d…</string>
+    <string name="converting_images">Converting images…</string>
+    <string name="pdf_saved_to_downloads">PDF saved to Downloads/PDFReader</string>
+    <string name="failed_to_convert_images">Failed to convert images to PDF</string>
+    <string name="no_images_selected">Please select at least one image</string>
+
+    <!-- Merge PDFs Tool -->
+    <string name="merge_pdf_file_name_hint">e.g. Merged_Document</string>
+    <string name="add_more_pdfs">Add PDFs</string>
+    <string name="merge_pdfs_action">Merge PDFs</string>
+    <string name="at_least_two_pdfs_hint">Add at least 2 PDFs to merge</string>
+    <string name="merging_pdf_progress">Merging PDF %1$d of %2$d…</string>
+    <string name="merging_pdfs">Merging PDFs…</string>
+    <string name="failed_to_merge_pdfs">Failed to merge PDFs</string>
+    <string name="encrypted_pdf_error">Cannot merge password-protected or encrypted PDFs</string>
+
+    <!-- About Section -->
+    <string name="settings_about_section">About</string>
+    <string name="settings_designed_by">Designed &amp; Developed by</string>
+    <string name="settings_developer_name">Anas Muhammad</string>
+    <string name="settings_github_repo">GitHub Repository</string>
+    <string name="settings_app_tagline">Fast PDF Reader &amp; Editor • Offline First</string>
 </resources>

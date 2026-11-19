@@ -39,4 +39,118 @@
 
     <string name="about">حول التطبيق</string>
     <string name="open_source_licenses">تراخيص المصادر المفتوحة</string>
+
+    <string name="edit">تعديل</string>
+    <string name="done">تم</string>
+    <string name="pen">قلم</string>
+    <string name="highlighter">تظليل</string>
+    <string name="eraser">ممحاة</string>
+    <string name="pan_mode">تحريك</string>
+    <string name="undo">تراجع</string>
+    <string name="redo">إعادة</string>
+    <string name="stroke_width">سُمك الخط</string>
+    <string name="color">اللون</string>
+    <string name="annotate">إضافة تعليقات</string>
+    <string name="discard_edits_title">تجاهل التغييرات؟</string>
+    <string name="discard_edits_message">لديك تعديلات غير محفوظة. هل تريد تجاهلها؟</string>
+    <string name="discard">تجاهل</string>
+    <string name="keep_editing">متابعة التعديل</string>
+
+    <string name="save_copy">حفظ نسخة</string>
+    <string name="save_as">حفظ باسم…</string>
+    <string name="saving_pdf">جارٍ حفظ ملف PDF…</string>
+    <string name="saved_to_downloads">تم الحفظ في التنزيلات: %1$s</string>
+    <string name="saved_successfully">تم حفظ ملف PDF بنجاح</string>
+    <string name="open_action">فتح</string>
+    <string name="export_failed">فشل تصدير ملف PDF</string>
+
+    <string name="hide_toolbar">إخفاء شريط الأدوات</string>
+    <string name="show_toolbar">إظهار شريط الأدوات</string>
+    <string name="stroke_style">نمط الخط</string>
+
+    <string name="close">إغلاق</string>
+    <string name="file_not_available">الملف لم يعد متاحاً</string>
+    <string name="file_not_available_description">قد يكون هذا الملف قد تم نقله أو إعادة تسميته أو حذفه.</string>
+    <string name="back_to_home">الرجوع للرئيسية</string>
+
+    <string name="text_tool">نص</string>
+    <string name="add_text">إضافة نص</string>
+    <string name="edit_text">تعديل النص</string>
+    <string name="text_placeholder">اكتب النص هنا…</string>
+    <string name="text_size">حجم الخط</string>
+    <string name="delete_annotation">حذف</string>
+
+    <!-- Text Highlight & Save Copy -->
+    <string name="annotations_saved_in_app">تم حفظ التعديلات داخل التطبيق</string>
+    <string name="color_yellow">أصفر</string>
+    <string name="color_green">أخضر</string>
+    <string name="color_pink">وردي</string>
+    <string name="color_blue">أزرق</string>
+
+    <!-- Collections -->
+    <string name="collections">المجموعات</string>
+    <string name="recent">الحديثة</string>
+    <string name="new_collection">جديدة</string>
+    <string name="create_collection">إنشاء مجموعة</string>
+    <string name="collection_name">اسم المجموعة</string>
+    <string name="collection_name_hint">مثال: دراسة، عمل</string>
+    <string name="delete_collection">حذف المجموعة</string>
+    <string name="delete_collection_message">هل أنت متأكد من حذف \"%1$s\"؟ لن يتم حذف ملفات PDF من جهازك.</string>
+    <string name="edit_collection_files">تعديل الملفات</string>
+    <string name="manage_files">إدارة الملفات</string>
+    <string name="no_files_in_collection">لا توجد ملفات في هذه المجموعة</string>
+    <string name="add_files">إضافة ملفات</string>
+    <string name="add_from_device">إضافة من الجهاز</string>
+    <string name="files_count">%1$d ملفات</string>
+    <string name="remove_from_collection">إزالة من المجموعة</string>
+
+    <!-- Digital Signature -->
+    <string name="signature_tool">التوقيع</string>
+    <string name="saved_signature_title">التوقيع المحفوظ</string>
+    <string name="create_signature_title">إنشاء توقيع</string>
+    <string name="use_signature">استخدام التوقيع</string>
+    <string name="create_new_signature">إنشاء جديد</string>
+    <string name="clear_signature">مسح</string>
+    <string name="sign_here_hint">وقّع هنا</string>
+    <string name="delete_signature">حذف التوقيع</string>
+    <string name="save">حفظ</string>
+
+    <!-- Offline Tools -->
+    <string name="tool_images_to_pdf_title">صور إلى PDF</string>
+    <string name="tool_images_to_pdf_subtitle">تحويل من المعرض</string>
+    <string name="tool_merge_pdfs_title">دمج ملفات PDF</string>
+    <string name="tool_merge_pdfs_subtitle">في ملف واحد</string>
+    <string name="coming_soon">قريباً</string>
+
+    <!-- Images to PDF Tool -->
+    <string name="pdf_file_name">اسم الملف</string>
+    <string name="pdf_file_name_hint">مثال: صور_مستند</string>
+    <string name="page_number">صفحة %1$d</string>
+    <string name="add_more_images">إضافة المزيد</string>
+    <string name="create_pdf">إنشاء PDF</string>
+    <string name="move_up">تحريك لأعلى</string>
+    <string name="move_down">تحريك لأسفل</string>
+    <string name="remove_image">إزالة</string>
+    <string name="converting_image_progress">جارٍ تحويل الصورة %1$d من %2$d…</string>
+    <string name="converting_images">جارٍ تحويل الصور…</string>
+    <string name="pdf_saved_to_downloads">تم حفظ ملف PDF في Downloads/PDFReader</string>
+    <string name="failed_to_convert_images">فشل تحويل الصور إلى PDF</string>
+    <string name="no_images_selected">يرجى اختيار صورة واحدة على الأقل</string>
+
+    <!-- Merge PDFs Tool -->
+    <string name="merge_pdf_file_name_hint">مثال: مستند_مدمج</string>
+    <string name="add_more_pdfs">إضافة ملفات PDF</string>
+    <string name="merge_pdfs_action">دمج ملفات PDF</string>
+    <string name="at_least_two_pdfs_hint">أضف ملفين PDF على الأقل للدمج</string>
+    <string name="merging_pdf_progress">جارٍ دمج ملف PDF %1$d من %2$d…</string>
+    <string name="merging_pdfs">جارٍ دمج ملفات PDF…</string>
+    <string name="failed_to_merge_pdfs">فشل دمج ملفات PDF</string>
+    <string name="encrypted_pdf_error">لا يمكن دمج ملفات PDF المشفرة أو المحمية بكلمة مرور</string>
+
+    <!-- About Section -->
+    <string name="settings_about_section">حول التطبيق</string>
+    <string name="settings_designed_by">تصميم وتطوير</string>
+    <string name="settings_developer_name">أنس محمد</string>
+    <string name="settings_github_repo">مستودع GitHub</string>
+    <string name="settings_app_tagline">قارئ ومحرر PDF سريع • يعمل بدون إنترنت</string>
 </resources>

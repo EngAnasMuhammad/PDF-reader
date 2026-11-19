@@ -1,31 +1,46 @@
 package com.anasdev.pdfreader.presentation.ui.screens.settingsScreen
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.core.graphics.createBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material.icons.filled.Swipe
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.anasdev.pdfreader.BuildConfig
 import com.anasdev.pdfreader.domain.model.AppLanguage
 import com.anasdev.pdfreader.domain.model.AppTheme
 import com.anasdev.pdfreader.presentation.state.PdfViewModel
 import com.anasdev.pdfreader.R
-import androidx.compose.material.icons.filled.Info
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +53,24 @@ fun SettingsScreen(
     val isHorizontalScroll by viewModel.isHorizontalScroll.collectAsStateWithLifecycle()
     val appTheme by viewModel.appTheme.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
+    val appIconBitmap = remember(context) {
+        try {
+            val drawable = context.packageManager.getApplicationIcon(context.packageName)
+            val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 144
+            val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 144
+            val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bitmap.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     var showThemeDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
@@ -59,6 +92,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
         ) {
             // Section 1: Reading Preferences
@@ -72,7 +106,7 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text(stringResource(R.string.keep_screen_awake)) },
                 supportingContent = { Text(stringResource(R.string.keep_screen_awake_description)) },
-                leadingContent = { Icon(Icons.Default.ScreenLockPortrait, null) },
+                leadingContent = { SettingIconContainer(imageVector = Icons.Default.ScreenLockPortrait) },
                 trailingContent = {
                     Switch(
                         checked = keepScreenAwake,
@@ -84,7 +118,7 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text(stringResource(R.string.horizontal_scrolling)) },
                 supportingContent = { Text(stringResource(R.string.horizontal_scrolling_description)) },
-                leadingContent = { Icon(Icons.Default.Swipe, null) },
+                leadingContent = { SettingIconContainer(imageVector = Icons.Default.Swipe) },
                 trailingContent = {
                     Switch(
                         checked = isHorizontalScroll,
@@ -100,14 +134,14 @@ fun SettingsScreen(
                 modifier = Modifier.clickable { showThemeDialog = true },
                 headlineContent = { Text(stringResource(R.string.app_theme)) },
                 supportingContent = { Text((stringResource(appTheme.displayName))) },
-                leadingContent = { Icon(Icons.Default.Palette, contentDescription = null) }
+                leadingContent = { SettingIconContainer(imageVector = Icons.Default.Palette) }
             )
 
             ListItem(
                 modifier = Modifier.clickable { showLanguageDialog = true },
                 headlineContent = { Text(stringResource(R.string.language)) },
                 supportingContent = { Text(stringResource(appLanguage.titleResId)) },
-                leadingContent = { Icon(Icons.Default.Language, contentDescription = null) }
+                leadingContent = { SettingIconContainer(imageVector = Icons.Default.Language) }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -124,45 +158,113 @@ fun SettingsScreen(
                 modifier = Modifier.clickable { showClearDialog = true },
                 headlineContent = { Text(stringResource(R.string.clear_history), color = Color.Red) },
                 supportingContent = { Text(stringResource(R.string.clear_history_description)) },
-                leadingContent = { Icon(Icons.Default.Delete, null, tint = Color.Red) }
+                leadingContent = {
+                    SettingIconContainer(
+                        imageVector = Icons.Default.Delete,
+                        iconTint = Color.Red
+                    )
+                }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Section 4: About
             Text(
-                text = stringResource(R.string.about),
+                text = stringResource(R.string.settings_about_section),
                 color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
             )
 
+            // Developer Row
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_designed_by)) },
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.settings_developer_name),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                },
+                leadingContent = { SettingIconContainer(imageVector = Icons.Rounded.Code) }
+            )
+
+            // GitHub Repository Row (Clickable)
+            ListItem(
+                modifier = Modifier.clickable {
+                    try {
+                        uriHandler.openUri("https://github.com/EngAnasMuhammad/PDF-reader")
+                    } catch (_: Exception) {
+                        // Safe fallback if no browser is installed
+                    }
+                },
+                headlineContent = { Text(stringResource(R.string.settings_github_repo)) },
+                supportingContent = {
+                    Text(
+                        text = "github.com/EngAnasMuhammad/PDF-reader",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                leadingContent = { SettingIconContainer(imageVector = Icons.Rounded.Public) }
+            )
+
+            // Open Source Licenses
             ListItem(
                 modifier = Modifier.clickable { onClickLicense() },
                 headlineContent = { Text(stringResource(R.string.open_source_licenses)) },
-                leadingContent = { Icon(Icons.Default.Info, contentDescription = null) }
+                leadingContent = { SettingIconContainer(imageVector = Icons.Default.Info) }
             )
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            // Footer
+            // Centered Footer Branding Block
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Row {
-                    Text(
-                        text = stringResource(R.string.app_name),
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp)
+                if (appIconBitmap != null) {
+                    Image(
+                        bitmap = appIconBitmap,
+                        contentDescription = stringResource(R.string.app_name),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
                     )
-                    Text(
-                        text = "V1.1.0",
-                        fontWeight = FontWeight.Bold
-                    )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.PictureAsPdf,
+                                contentDescription = stringResource(R.string.app_name),
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.settings_app_tagline),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -277,5 +379,28 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun SettingIconContainer(
+    imageVector: ImageVector,
+    contentDescription: String? = null,
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+) {
+    Surface(
+        shape = CircleShape,
+        color = containerColor,
+        modifier = Modifier.size(40.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = imageVector,
+                contentDescription = contentDescription,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }

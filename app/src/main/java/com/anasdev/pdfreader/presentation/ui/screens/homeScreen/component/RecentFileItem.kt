@@ -1,5 +1,6 @@
 package com.anasdev.pdfreader.presentation.ui.screens.homeScreen.component
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,7 +40,8 @@ fun RecentFileItem(
                 text = file.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyLarge
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.basicMarquee()
             )
         },
         supportingContent = {

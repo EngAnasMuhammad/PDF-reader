@@ -86,9 +86,15 @@ public class PdfFile {
      */
     private int[] originalUserPages;
     private int topPaddingPx = 0;
+    private int bottomPaddingPx = 0;
 
     PdfFile(PdfiumCore pdfiumCore, PdfDocument pdfDocument, FitPolicy pageFitPolicy, Size viewSize, int[] originalUserPages,
             boolean isVertical, int spacing, boolean autoSpacing, boolean fitEachPage, int topPaddingPx) {
+        this(pdfiumCore, pdfDocument, pageFitPolicy, viewSize, originalUserPages, isVertical, spacing, autoSpacing, fitEachPage, topPaddingPx, 0);
+    }
+
+    PdfFile(PdfiumCore pdfiumCore, PdfDocument pdfDocument, FitPolicy pageFitPolicy, Size viewSize, int[] originalUserPages,
+            boolean isVertical, int spacing, boolean autoSpacing, boolean fitEachPage, int topPaddingPx, int bottomPaddingPx) {
         this.pdfiumCore = pdfiumCore;
         this.pdfDocument = pdfDocument;
         this.pageFitPolicy = pageFitPolicy;
@@ -98,6 +104,7 @@ public class PdfFile {
         this.autoSpacing = autoSpacing;
         this.fitEachPage = fitEachPage;
         this.topPaddingPx = topPaddingPx;
+        this.bottomPaddingPx = bottomPaddingPx;
         setup(viewSize);
     }
 
@@ -247,6 +254,14 @@ public class PdfFile {
 
     public float getDocLen(float zoom) {
         return documentLength * zoom;
+    }
+
+    public int getTopPaddingPx() {
+        return topPaddingPx;
+    }
+
+    public int getBottomPaddingPx() {
+        return bottomPaddingPx;
     }
 
     /**

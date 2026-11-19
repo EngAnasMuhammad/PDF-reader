@@ -147,9 +147,12 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
             if (pdfView.isSwipeVertical() && pdfView.getDocumentTopPaddingPx() > 0) {
                 minPos = pdfView.getDocumentTopPaddingPx();
             }
+            float bottomPadding = (pdfView.isSwipeVertical() && pdfView.getDocumentBottomPaddingPx() > 0)
+                    ? pdfView.getDocumentBottomPaddingPx()
+                    : 100;
             float pdfViewSize = pdfView.isSwipeVertical() ? pdfView.getHeight() : pdfView.getWidth();
             float handleSize = pdfView.isSwipeVertical() ? getHeight() : getWidth();
-            float maxPos = pdfViewSize - handleSize - 100;
+            float maxPos = pdfViewSize - handleSize - bottomPadding;
             if (maxPos < minPos) maxPos = minPos;
 
             setPosition(minPos + (maxPos - minPos) * position + relativeHandlerMiddle);
@@ -174,7 +177,10 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
             minPos = pdfView.getDocumentTopPaddingPx();
         }
 
-        float maxPos = pdfViewSize - 100 - (pdfView.isSwipeVertical() ? getHeight() : getWidth());
+        float bottomPadding = (pdfView.isSwipeVertical() && pdfView.getDocumentBottomPaddingPx() > 0)
+                ? pdfView.getDocumentBottomPaddingPx()
+                : 100;
+        float maxPos = pdfViewSize - bottomPadding - (pdfView.isSwipeVertical() ? getHeight() : getWidth());
         if (maxPos < minPos) maxPos = minPos;
 
         if (pos < minPos) {
@@ -276,7 +282,10 @@ public class DefaultScrollHandle extends RelativeLayout implements ScrollHandle 
 
                 if (pdfView.isSwipeVertical()) {
                     setPosition(event.getRawY() - currentPos + relativeHandlerMiddle);
-                    float maxPos = pdfView.getHeight() - getHeight() - 100;
+                    float bottomPadding = pdfView.getDocumentBottomPaddingPx() > 0
+                            ? pdfView.getDocumentBottomPaddingPx()
+                            : 100;
+                    float maxPos = pdfView.getHeight() - getHeight() - bottomPadding;
                     if (maxPos <= minPos) maxPos = minPos + 1;
                     float offset = (getY() - minPos) / (maxPos - minPos);
                     pdfView.setPositionOffset(offset, false);
