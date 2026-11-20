@@ -160,8 +160,7 @@ fun SettingsScreen(
                 supportingContent = { Text(stringResource(R.string.clear_history_description)) },
                 leadingContent = {
                     SettingIconContainer(
-                        imageVector = Icons.Default.Delete,
-                        iconTint = Color.Red
+                        imageVector = Icons.Default.Delete
                     )
                 }
             )

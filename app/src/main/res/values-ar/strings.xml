@@ -147,6 +147,15 @@
     <string name="failed_to_merge_pdfs">فشل دمج ملفات PDF</string>
     <string name="encrypted_pdf_error">لا يمكن دمج ملفات PDF المشفرة أو المحمية بكلمة مرور</string>
 
+    <!-- In-Document Search & Edit FAB -->
+    <string name="search_in_document">البحث في المستند…</string>
+    <string name="search">بحث</string>
+    <string name="next_match">النتيجة التالية</string>
+    <string name="previous_match">النتيجة السابقة</string>
+    <string name="clear_search">مسح البحث</string>
+    <string name="no_matches_found">لم يتم العثور على نتائج</string>
+    <string name="edit_pdf">تعديل PDF</string>
+
     <!-- About Section -->
     <string name="settings_about_section">حول التطبيق</string>
     <string name="settings_designed_by">تصميم وتطوير</string>

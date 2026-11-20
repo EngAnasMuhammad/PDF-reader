@@ -148,6 +148,10 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
 
     @Override
     public boolean onDoubleTap(MotionEvent e) {
+        if (pdfView.getTextSelectionManager() != null && pdfView.getTextSelectionManager().isSelectionActive()) {
+            pdfView.clearTextSelection();
+        }
+
         if (!pdfView.isDoubletapEnabled()) {
             return false;
         }
@@ -203,6 +207,9 @@ class DragPinchManager implements GestureDetector.OnGestureListener, GestureDete
         hideHandle();
         if (!animationManager.isFlinging()) {
             pdfView.performPageSnap();
+            if (pdfView.getTextSelectionManager() != null && pdfView.getTextSelectionManager().isSelectionActive()) {
+                pdfView.getTextSelectionManager().onAnimationEnd();
+            }
         }
     }
 

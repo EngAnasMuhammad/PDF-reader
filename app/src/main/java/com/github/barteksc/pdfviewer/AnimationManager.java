@@ -73,6 +73,9 @@ class AnimationManager {
 
     public void startZoomAnimation(float centerX, float centerY, float zoomFrom, float zoomTo) {
         stopAll();
+        if (pdfView.getTextSelectionManager() != null) {
+            pdfView.getTextSelectionManager().dismissColorDropdown();
+        }
         animation = ValueAnimator.ofFloat(zoomFrom, zoomTo);
         animation.setInterpolator(new DecelerateInterpolator());
         ZoomAnimation zoomAnim = new ZoomAnimation(centerX, centerY);
@@ -84,6 +87,9 @@ class AnimationManager {
 
     public void startFlingAnimation(int startX, int startY, int velocityX, int velocityY, int minX, int maxX, int minY, int maxY) {
         stopAll();
+        if (pdfView.getTextSelectionManager() != null) {
+            pdfView.getTextSelectionManager().dismissColorDropdown();
+        }
         flinging = true;
         scroller.fling(startX, startY, velocityX, velocityY, minX, maxX, minY, maxY);
     }
@@ -106,6 +112,9 @@ class AnimationManager {
             pdfView.loadPages();
             hideHandle();
             pdfView.performPageSnap();
+            if (pdfView.getTextSelectionManager() != null && pdfView.getTextSelectionManager().isSelectionActive()) {
+                pdfView.getTextSelectionManager().onAnimationEnd();
+            }
         }
     }
 
@@ -124,6 +133,10 @@ class AnimationManager {
 
     public boolean isFlinging() {
         return flinging || pageFlinging;
+    }
+
+    public boolean isAnimating() {
+        return (animation != null && animation.isRunning()) || isFlinging();
     }
 
     class XAnimation extends AnimatorListenerAdapter implements AnimatorUpdateListener {
@@ -147,6 +160,9 @@ class AnimationManager {
             pdfView.loadPages();
             pageFlinging = false;
             hideHandle();
+            if (pdfView.getTextSelectionManager() != null && pdfView.getTextSelectionManager().isSelectionActive()) {
+                pdfView.getTextSelectionManager().onAnimationEnd();
+            }
         }
     }
 
@@ -171,6 +187,9 @@ class AnimationManager {
             pdfView.loadPages();
             pageFlinging = false;
             hideHandle();
+            if (pdfView.getTextSelectionManager() != null && pdfView.getTextSelectionManager().isSelectionActive()) {
+                pdfView.getTextSelectionManager().onAnimationEnd();
+            }
         }
     }
 
@@ -201,6 +220,9 @@ class AnimationManager {
             pdfView.loadPages();
             pdfView.performPageSnap();
             hideHandle();
+            if (pdfView.getTextSelectionManager() != null && pdfView.getTextSelectionManager().isSelectionActive()) {
+                pdfView.getTextSelectionManager().onAnimationEnd();
+            }
         }
 
         @Override

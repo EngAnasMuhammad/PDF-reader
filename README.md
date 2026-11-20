@@ -1,4 +1,4 @@
-# PDF Reader [![Android CI](https://github.com/EngAnasMuhammad/PDF-reader/actions/workflows/build.yml/badge.svg)](https://github.com/EngAnasMuhammad/PDF-reader/actions/workflows/build.yml) [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/EngAnasMuhammad/PDF-reader/releases)
+# PDF Reader [![Android CI](https://github.com/EngAnasMuhammad/PDF-reader/actions/workflows/build.yml/badge.svg)](https://github.com/EngAnasMuhammad/PDF-reader/actions/workflows/build.yml) [![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](https://github.com/EngAnasMuhammad/PDF-reader/releases)
 
 A lightweight, **100% offline-first** Android PDF reader, annotator, and document utility suite built with **Jetpack Compose**, **Clean Architecture**, and a native **C++ PDFium NDK** engine.
 
@@ -10,6 +10,8 @@ Designed for speed, low RAM usage, and strict privacy—everything runs locally 
 
 ### Reading & Viewing
 - **Native C++ PDFium Rendering:** Fast, smooth rendering and zooming via a modified C++ PDFium NDK engine.
+- **Offline In-Document Text Search:** Fast, sequential document-order PDFium text search with a Google Drive-style morphed search bar, viewport auto-centering, active/inactive match highlighting, and **Arabic-aware normalization** (ignoring hamza variants `أ/إ/آ`, `ة/ه`, `ى/ي`, tashkeel, and tatweel).
+- **Refined Reading & Selection UX:** Cleaner TopBar with Edit Mode moved to an animated Floating Action Button, background-threaded PDFium text hit-testing, and RTL-aware Material 3 teardrop selection handles with generous touch hitboxes and smooth drag auto-correction.
 - **Custom GPU Reading Modes:** Hardware-accelerated `ColorMatrixColorFilter` support for **Sepia**, **Dimmed**, and **Dark** reading modes.
 - **Adaptive Portrait & Landscape UI:** Responsive layouts with edge-to-edge inset handling, 2-pane side-by-side landscape sheets, and scroll-safe toolbars.
 - **Viewing Modes & Preferences:** Continuous vertical and horizontal scroll options, and a keep-screen-awake toggle.
@@ -50,6 +52,10 @@ Designed for speed, low RAM usage, and strict privacy—everything runs locally 
     - *Challenge:* Modifying PDFs in place requires broad file permissions and destroys undo history, while exporting a new copy on every edit clutters the user's storage.
     - *Solution:* Persisted editable annotations locally in Room (with explicit schema migrations and zero broad storage permissions via SAF and Android's Photo Picker), offering instant **Undo/Redo** and on-demand **Save Copy** export to `Downloads/PDFReader/`.
 
+- **Lean Binary Footprint & Native PDF Performance:**
+    - *Challenge:* Bundling native C++ PDFium `.so` binaries alongside `PdfBox-Android` and Room dependencies often balloons APK size past 40–50 MB.
+    - *Solution:* Implemented `arm64-v8a` target ABI optimization, strict R8 code shrinking, and resource optimization—keeping the full offline C++ rendering and vector manipulation suite compressed to around **~13 MB**.
+
 ---
 
 ## Tech Stack
@@ -65,7 +71,7 @@ Designed for speed, low RAM usage, and strict privacy—everything runs locally 
 
 ## Installation
 1. Go to the [Releases](../../releases) tab.
-2. Download the latest `v2.0.0` release (`app-release.apk`).
+2. Download the latest `v2.1.0` release (`app-release.apk`).
 3. Install on any Android 8.0+ device (API 26+).
 
 ---

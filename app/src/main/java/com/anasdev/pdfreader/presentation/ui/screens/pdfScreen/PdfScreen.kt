@@ -14,25 +14,36 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.SaveAlt
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,29 +51,11 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.IntOffset
-import com.anasdev.pdfreader.domain.model.NormalizedRect
-import com.anasdev.pdfreader.domain.model.TextHighlight
-import com.github.barteksc.pdfviewer.selection.PdfTextSelectionManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,9 +63,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
@@ -83,6 +79,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -91,6 +88,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.anasdev.pdfreader.R
 import com.anasdev.pdfreader.domain.model.AnnotationTool
+import com.anasdev.pdfreader.domain.model.NormalizedRect
 import com.anasdev.pdfreader.domain.model.ReadingMode
 import com.anasdev.pdfreader.domain.model.Signature
 import com.anasdev.pdfreader.domain.model.TextBox
@@ -112,7 +110,10 @@ import com.anasdev.pdfreader.presentation.state.PdfViewModel
 import com.anasdev.pdfreader.presentation.utils.PdfColorFilters
 import com.github.barteksc.pdfviewer.PDFView
 import com.github.barteksc.pdfviewer.scroll.DefaultScrollHandle
+import com.github.barteksc.pdfviewer.selection.PdfTextSelectionManager
 import com.github.barteksc.pdfviewer.util.FitPolicy
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,6 +155,7 @@ fun PdfScreen(
     val hasUnsavedEditChanges by viewModel.hasUnsavedEditChanges.collectAsStateWithLifecycle()
     val isExporting by viewModel.isExporting.collectAsStateWithLifecycle()
     val savedSignature by viewModel.savedSignature.collectAsStateWithLifecycle()
+    val searchUiState by viewModel.searchUiState.collectAsStateWithLifecycle()
 
     val selectedTextBox = remember(selectedAnnotationId, annotationsByPage) {
         if (selectedAnnotationId == null) null
@@ -245,7 +247,7 @@ fun PdfScreen(
     var showDiscardConfirmDialog by remember { mutableStateOf(false) }
 
     // Quick Pill state for tapping TextHighlight in Reading Mode
-    var selectedHighlightState by remember { mutableStateOf<Pair<TextHighlight, Pair<Float, Float>>?>(null) }
+    val selectedHighlightState by viewModel.selectedHighlightState.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
 
     val annotationRenderer = remember { AnnotationRenderer() }
@@ -253,6 +255,8 @@ fun PdfScreen(
     // Lightweight state holder kept in sync on composition to prevent document reloads
     val stateHolder = remember { AnnotationStateHolder() }
     stateHolder.annotationsByPage = annotationsByPage
+    stateHolder.searchMatchesByPage = searchUiState.matchesByPage
+    stateHolder.activeSearchMatchId = searchUiState.currentMatch?.id
     stateHolder.isEditMode = isEditMode
     stateHolder.activeTool = activeTool
     stateHolder.selectedColorArgb = selectedColorArgb
@@ -263,7 +267,7 @@ fun PdfScreen(
         if (isStylePopoverVisible) {
             isStylePopoverVisible = false
         }
-        selectedHighlightState = null
+        viewModel.clearSelectedHighlight()
     }
     stateHolder.onOpenAddText = { pageIndex, xNorm, yNorm ->
         textDialogState = TextDialogState.Add(pageIndex, xNorm, yNorm)
@@ -272,15 +276,28 @@ fun PdfScreen(
         textDialogState = TextDialogState.Edit(textBox)
     }
     stateHolder.onSelectHighlight = { highlight, screenX, screenY ->
-        selectedHighlightState = highlight to (screenX to screenY)
+        viewModel.setSelectedHighlight(highlight, screenX, screenY)
     }
     stateHolder.onDismissHighlight = {
-        selectedHighlightState = null
+        viewModel.clearSelectedHighlight()
     }
 
-    // Invalidate PDFView on annotations change without re-calling load()
-    LaunchedEffect(annotationsByPage, selectedAnnotationId) {
+    // Reset transient document UI state on document URI change
+    LaunchedEffect(pdfUri) {
+        viewModel.clearDocumentSessionUiState()
+        pdfViewRef?.clearTextSelection()
+    }
+
+    // Invalidate PDFView on annotations or search matches change without re-calling load()
+    LaunchedEffect(annotationsByPage, selectedAnnotationId, searchUiState.matchesByPage, searchUiState.currentMatchIndex) {
         pdfViewRef?.invalidate()
+    }
+
+    // Auto-jump to match when current match changes
+    LaunchedEffect(searchUiState.currentMatchIndex, searchUiState.matches.firstOrNull()?.id) {
+        searchUiState.currentMatch?.let { activeMatch ->
+            pdfViewRef?.jumpToMatch(activeMatch.pageIndex, activeMatch.normalizedCenterY)
+        }
     }
 
     val handleCloseEditMode = {
@@ -296,6 +313,11 @@ fun PdfScreen(
         handleCloseEditMode()
     }
 
+    // Intercept back gesture when search is open to close search without leaving document
+    BackHandler(enabled = searchUiState.isSearchOpen && !isEditMode) {
+        viewModel.closeSearch()
+    }
+
     val localView = LocalView.current
     DisposableEffect(keepScreenAwake) {
         if (keepScreenAwake) {
@@ -309,10 +331,12 @@ fun PdfScreen(
     DisposableEffect(Unit) {
         onDispose {
             pdfViewRef?.let { pdfView ->
+                pdfView.clearTextSelection()
                 viewModel.saveCurrentPage(pdfView.currentPage)
                 pdfView.recycle() // Cleanly free C++ native PDFium document memory & bitmap caches
             }
             pdfViewRef = null
+            viewModel.clearDocumentSessionUiState()
         }
     }
 
@@ -408,7 +432,10 @@ fun PdfScreen(
                                         viewModel.saveCurrentPage(page)
                                     }
                                     .onPageScroll { _, positionOffset ->
-                                        if (!stateHolder.isEditMode) {
+                                        if (selectedHighlightState != null) {
+                                            viewModel.clearSelectedHighlight()
+                                        }
+                                        if (!stateHolder.isEditMode && !searchUiState.isSearchOpen) {
                                             if (positionOffset > 0.02f && isTopBarVisible) {
                                                 isTopBarVisible = false
                                             } else if (positionOffset < -0.02f && !isTopBarVisible) {
@@ -425,7 +452,9 @@ fun PdfScreen(
                                             persistedAnnotations = stateHolder.annotationsByPage[displayedPage],
                                             activeStroke = stateHolder.activeStroke,
                                             isEditMode = stateHolder.isEditMode,
-                                            selectedAnnotationId = stateHolder.selectedAnnotationId
+                                            selectedAnnotationId = stateHolder.selectedAnnotationId,
+                                            searchMatches = stateHolder.searchMatchesByPage[displayedPage],
+                                            activeSearchMatchId = stateHolder.activeSearchMatchId
                                         )
                                     }
                                     .load()
@@ -457,11 +486,47 @@ fun PdfScreen(
                 contentAlignment = Alignment.TopCenter
             ) {
                 AnimatedVisibility(
-                    visible = isTopBarVisible || isEditMode,
+                    visible = isTopBarVisible || isEditMode || searchUiState.isSearchOpen,
                     enter = slideInVertically(initialOffsetY = { -it }),
                     exit = slideOutVertically(targetOffsetY = { -it })
                 ) {
-                    if (!isEditMode) {
+                    if (searchUiState.isSearchOpen) {
+                        PdfSearchBar(
+                            searchUiState = searchUiState,
+                            onQueryChange = { query ->
+                                val pdfView = pdfViewRef
+                                val pageCount = pdfView?.pageCount ?: 0
+                                val curPage = pdfView?.currentPage ?: 0
+                                viewModel.onSearchQueryChange(
+                                    newQuery = query,
+                                    pageCount = pageCount,
+                                    startPage = curPage,
+                                    searchPageProvider = { pageIndex ->
+                                        val text = pdfView?.extractPageTextForSearch(pageIndex) ?: ""
+                                        val matchRanges = com.anasdev.pdfreader.domain.search.TextSearchHelper.findMatches(text, query.trim())
+                                        matchRanges.map { range ->
+                                            val rectFs = pdfView?.getNormalizedTextRectsForRange(
+                                                pageIndex,
+                                                range.originalStartIndex,
+                                                range.originalLength
+                                            ) ?: emptyList()
+                                            val normRects = rectFs.map { r ->
+                                                NormalizedRect(r.left, r.top, r.right, r.bottom)
+                                            }
+                                            com.anasdev.pdfreader.domain.model.SearchMatch(
+                                                id = 0,
+                                                pageIndex = pageIndex,
+                                                rects = normRects
+                                            )
+                                        }
+                                    }
+                                )
+                            },
+                            onCloseSearch = { viewModel.closeSearch() },
+                            onNextMatch = { viewModel.nextMatch() },
+                            onPreviousMatch = { viewModel.previousMatch() }
+                        )
+                    } else if (!isEditMode) {
                         TopAppBar(
                             title = {
                                 Text(
@@ -502,14 +567,14 @@ fun PdfScreen(
                                     }
                                 }
 
-                                // Edit Mode Toggle
+                                // Search in Document Toggle
                                 TooltipIconButton(
-                                    label = stringResource(R.string.edit),
-                                    onClick = { viewModel.enterEditMode() }
+                                    label = stringResource(R.string.search),
+                                    onClick = { viewModel.openSearch() }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = stringResource(R.string.edit)
+                                        imageVector = Icons.Rounded.Search,
+                                        contentDescription = stringResource(R.string.search)
                                     )
                                 }
 
@@ -858,6 +923,30 @@ fun PdfScreen(
                 )
             }
 
+            // --- READING MODE EDIT FAB ---
+            AnimatedVisibility(
+                visible = !isEditMode && isTopBarVisible && !searchUiState.isSearchOpen,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .displayCutoutPadding()
+                    .padding(16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = { viewModel.enterEditMode() },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = stringResource(R.string.edit_pdf)
+                    )
+                }
+            }
+
             // --- READING MODE TAP-TO-RECOLOR / DELETE FLOATING PILL ---
             if (!isEditMode) {
                 selectedHighlightState?.let { (highlight, coords) ->
@@ -900,7 +989,7 @@ fun PdfScreen(
                                         .border(1.dp, Color(0x33000000), CircleShape)
                                         .clickable {
                                             viewModel.updateTextHighlightColor(highlight.id, colorArgb)
-                                            selectedHighlightState = null
+                                            viewModel.clearSelectedHighlight()
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -925,7 +1014,7 @@ fun PdfScreen(
                                 label = stringResource(R.string.delete_annotation),
                                 onClick = {
                                     viewModel.deleteTextHighlight(highlight.id)
-                                    selectedHighlightState = null
+                                    viewModel.clearSelectedHighlight()
                                 }
                             ) {
                                 Icon(

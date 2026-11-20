@@ -36,6 +36,7 @@ import com.github.barteksc.pdfviewer.util.Size;
 import com.github.barteksc.pdfviewer.util.SizeF;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class PdfFile {
@@ -433,51 +434,251 @@ public class PdfFile {
 
     public int getTextPageCountChars(int pageIndex) {
         synchronized (lock) {
-            PdfTextPage textPage = openTextPage(pageIndex);
-            return textPage != null ? textPage.textPageCountChars() : 0;
+            try {
+                PdfTextPage textPage = openTextPage(pageIndex);
+                return textPage != null ? textPage.textPageCountChars() : 0;
+            } catch (Exception ignored) {
+                return 0;
+            }
         }
     }
 
     public String getTextPageText(int pageIndex, int startIndex, int length) {
         synchronized (lock) {
-            PdfTextPage textPage = openTextPage(pageIndex);
-            if (textPage != null && length > 0) {
-                // Return exact native text string
-                return textPage.textPageGetText(startIndex, length);
-            }
+            try {
+                PdfTextPage textPage = openTextPage(pageIndex);
+                if (textPage != null && startIndex >= 0 && length > 0) {
+                    int total = textPage.textPageCountChars();
+                    if (startIndex < total) {
+                        int safeLength = Math.min(length, total - startIndex);
+                        return textPage.textPageGetText(startIndex, safeLength);
+                    }
+                }
+            } catch (Exception ignored) {}
             return "";
         }
     }
 
     public int getTextPageCharIndexAtPos(int pageIndex, double x, double y, double xTolerance, double yTolerance) {
         synchronized (lock) {
-            PdfTextPage textPage = openTextPage(pageIndex);
-            return textPage != null ? textPage.textPageGetCharIndexAtPos(x, y, xTolerance, yTolerance) : -1;
+            try {
+                PdfTextPage textPage = openTextPage(pageIndex);
+                return textPage != null ? textPage.textPageGetCharIndexAtPos(x, y, xTolerance, yTolerance) : -1;
+            } catch (Exception ignored) {
+                return -1;
+            }
         }
     }
 
     public RectF getTextPageCharBox(int pageIndex, int charIndex) {
         synchronized (lock) {
-            PdfTextPage textPage = openTextPage(pageIndex);
-            return textPage != null ? textPage.textPageGetCharBox(charIndex) : null;
+            try {
+                PdfTextPage textPage = openTextPage(pageIndex);
+                if (textPage != null && charIndex >= 0) {
+                    return textPage.textPageGetCharBox(charIndex);
+                }
+            } catch (Exception ignored) {}
+            return null;
         }
     }
 
     public List<RectF> getTextPageRects(int pageIndex, int startIndex, int count) {
         synchronized (lock) {
             List<RectF> rects = new ArrayList<>();
-            PdfTextPage textPage = openTextPage(pageIndex);
-            if (textPage != null && count > 0) {
-                int rectCount = textPage.textPageCountRects(startIndex, count);
-                for (int i = 0; i < rectCount; i++) {
-                    RectF rect = textPage.textPageGetRect(i);
-                    if (rect != null) {
-                        rects.add(rect);
+            try {
+                PdfTextPage textPage = openTextPage(pageIndex);
+                if (textPage != null && startIndex >= 0 && count > 0) {
+                    int total = textPage.textPageCountChars();
+                    if (startIndex < total) {
+                        int safeCount = Math.min(count, total - startIndex);
+                        int rectCount = textPage.textPageCountRects(startIndex, safeCount);
+                        for (int i = 0; i < rectCount; i++) {
+                            RectF rect = textPage.textPageGetRect(i);
+                            if (rect != null) {
+                                rects.add(rect);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+            return rects;
+        }
+    }
+
+    /**
+     * Extracts full plain text of the given page for search indexing.
+     * Uses an isolated native text page and closes it immediately to ensure zero memory accumulation.
+     */
+    public String extractPageTextForSearch(int pageIndex) {
+        int docPage = documentPage(pageIndex);
+        if (docPage < 0) return "";
+        synchronized (lock) {
+            // If already cached by active text selection, read directly
+            PdfTextPage cachedTextPage = openedPdfTextPages.get(docPage);
+            if (cachedTextPage != null) {
+                int count = cachedTextPage.textPageCountChars();
+                return count > 0 ? cachedTextPage.textPageGetText(0, count) : "";
+            }
+
+            // Otherwise, open transient text page and close immediately in finally
+            PdfPage page = openedPdfPages.get(docPage);
+            boolean openedPageTransiently = false;
+            if (page == null) {
+                try {
+                    openPage(pageIndex);
+                    page = openedPdfPages.get(docPage);
+                    openedPageTransiently = true;
+                } catch (Exception ignored) {
+                    return "";
+                }
+            }
+            if (page == null) return "";
+
+            PdfTextPage transientTextPage = null;
+            try {
+                transientTextPage = page.openTextPage();
+                if (transientTextPage != null) {
+                    int charCount = transientTextPage.textPageCountChars();
+                    return charCount > 0 ? transientTextPage.textPageGetText(0, charCount) : "";
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (transientTextPage != null) {
+                    try {
+                        transientTextPage.close();
+                    } catch (Exception ignored) {}
+                }
+                if (openedPageTransiently && page != null) {
+                    try {
+                        page.close();
+                        openedPdfPages.remove(docPage);
+                        openedPages.delete(docPage);
+                    } catch (Exception ignored) {}
+                }
+            }
+            return "";
+        }
+    }
+
+    /**
+     * Resolves character index ranges on a page into normalized 0f..1f bounding boxes (top-left origin).
+     * Synchronized on lock and closes any transient text pages immediately.
+     */
+    public List<RectF> getNormalizedTextRectsForRange(int pageIndex, int startIndex, int length) {
+        if (length <= 0) return Collections.emptyList();
+        int docPage = documentPage(pageIndex);
+        if (docPage < 0) return Collections.emptyList();
+
+        Size originalSize = getOriginalPageSize(pageIndex);
+        float origW = originalSize != null ? originalSize.getWidth() : 0f;
+        float origH = originalSize != null ? originalSize.getHeight() : 0f;
+        if (origW <= 0f || origH <= 0f) return Collections.emptyList();
+
+        List<RectF> rawPdfRects = new ArrayList<>();
+        synchronized (lock) {
+            PdfTextPage cachedTextPage = openedPdfTextPages.get(docPage);
+            if (cachedTextPage != null) {
+                int count = cachedTextPage.textPageCountRects(startIndex, length);
+                for (int i = 0; i < count; i++) {
+                    RectF r = cachedTextPage.textPageGetRect(i);
+                    if (r != null) rawPdfRects.add(r);
+                }
+            } else {
+                PdfPage page = openedPdfPages.get(docPage);
+                boolean openedPageTransiently = false;
+                if (page == null) {
+                    try {
+                        openPage(pageIndex);
+                        page = openedPdfPages.get(docPage);
+                        openedPageTransiently = true;
+                    } catch (Exception ignored) {
+                        return Collections.emptyList();
+                    }
+                }
+                if (page == null) return Collections.emptyList();
+
+                PdfTextPage transientTextPage = null;
+                try {
+                    transientTextPage = page.openTextPage();
+                    if (transientTextPage != null) {
+                        int count = transientTextPage.textPageCountRects(startIndex, length);
+                        for (int i = 0; i < count; i++) {
+                            RectF r = transientTextPage.textPageGetRect(i);
+                            if (r != null) rawPdfRects.add(r);
+                        }
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (transientTextPage != null) {
+                        try {
+                            transientTextPage.close();
+                        } catch (Exception ignored) {}
+                    }
+                    if (openedPageTransiently && page != null) {
+                        try {
+                            page.close();
+                            openedPdfPages.remove(docPage);
+                            openedPages.delete(docPage);
+                        } catch (Exception ignored) {}
                     }
                 }
             }
-            return rects;
         }
+
+        if (rawPdfRects.isEmpty()) return Collections.emptyList();
+
+        // Merge adjacent character boxes on the same line in PDF coordinate space
+        List<RectF> mergedPdfRects = new ArrayList<>();
+        RectF currentLine = null;
+
+        for (RectF rect : rawPdfRects) {
+            if (currentLine == null) {
+                currentLine = new RectF(rect);
+            } else {
+                float lineCenterY = currentLine.centerY();
+                float rectCenterY = rect.centerY();
+                float lineHeight = Math.max(Math.abs(currentLine.height()), Math.abs(rect.height()));
+
+                if (Math.abs(lineCenterY - rectCenterY) < lineHeight * 0.6f) {
+                    currentLine.left = Math.min(currentLine.left, rect.left);
+                    currentLine.right = Math.max(currentLine.right, rect.right);
+                    currentLine.top = Math.max(currentLine.top, rect.top);
+                    currentLine.bottom = Math.min(currentLine.bottom, rect.bottom);
+                } else {
+                    mergedPdfRects.add(currentLine);
+                    currentLine = new RectF(rect);
+                }
+            }
+        }
+        if (currentLine != null) {
+            mergedPdfRects.add(currentLine);
+        }
+
+        List<RectF> normalizedRects = new ArrayList<>(mergedPdfRects.size());
+        for (RectF r : mergedPdfRects) {
+            float minX = Math.min(r.left, r.right);
+            float maxX = Math.max(r.left, r.right);
+            float minY = Math.min(r.top, r.bottom);
+            float maxY = Math.max(r.top, r.bottom);
+
+            // In PDFium coordinates: (0,0) is bottom-left, y goes up
+            // Normalized page coordinates: (0,0) is top-left, y goes down
+            float normLeft = (minX / origW);
+            float normRight = (maxX / origW);
+            float normTop = (origH - maxY) / origH;
+            float normBottom = (origH - minY) / origH;
+
+            float clampedLeft = Math.max(0f, Math.min(1f, normLeft));
+            float clampedTop = Math.max(0f, Math.min(1f, normTop));
+            float clampedRight = Math.max(0f, Math.min(1f, normRight));
+            float clampedBottom = Math.max(0f, Math.min(1f, normBottom));
+
+            if (clampedRight > clampedLeft && clampedBottom > clampedTop) {
+                normalizedRects.add(new RectF(clampedLeft, clampedTop, clampedRight, clampedBottom));
+            }
+        }
+
+        return normalizedRects;
     }
 
     public void dispose() {

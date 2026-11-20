@@ -16,6 +16,8 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.ImageSpan;
@@ -36,7 +38,12 @@ import com.github.barteksc.pdfviewer.PDFView;
 import com.github.barteksc.pdfviewer.util.SizeF;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class PdfTextSelectionManager {
 
@@ -47,7 +54,16 @@ public class PdfTextSelectionManager {
     private int startCharIndex = -1;
     private int endCharIndex = -1;
     private String selectedText = "";
+    private final List<RectF> cachedNormalizedRects = new ArrayList<>();
     private final List<RectF> highlightScreenRects = new ArrayList<>();
+
+    // Teardrop handle anchor positions and hit-boxes
+    private float startAnchorX = 0f;
+    private float startAnchorY = 0f;
+    private float endAnchorX = 0f;
+    private float endAnchorY = 0f;
+    private boolean hasStartHandle = false;
+    private boolean hasEndHandle = false;
 
     private final RectF startHandleRect = new RectF();
     private final RectF endHandleRect = new RectF();
@@ -61,8 +77,9 @@ public class PdfTextSelectionManager {
 
     private ActionMode actionMode;
 
-    private static final float HANDLE_RADIUS = 24f;
-    private static final float TOUCH_TOLERANCE = 45f;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final AtomicLong currentRequestId = new AtomicLong(0);
+    private ExecutorService executor;
 
     public interface SelectionHighlightListener {
         void onApplyHighlight(int colorArgb);
@@ -90,6 +107,12 @@ public class PdfTextSelectionManager {
         return new ArrayList<>(highlightScreenRects);
     }
 
+    public List<RectF> getNormalizedSelectionRects() {
+        synchronized (cachedNormalizedRects) {
+            return new ArrayList<>(cachedNormalizedRects);
+        }
+    }
+
     public PdfTextSelectionManager(PDFView pdfView) {
         this.pdfView = pdfView;
         this.context = pdfView.getContext();
@@ -102,6 +125,13 @@ public class PdfTextSelectionManager {
         handlePaint.setStyle(Paint.Style.FILL);
     }
 
+    private synchronized ExecutorService getExecutor() {
+        if (executor == null || executor.isShutdown() || executor.isTerminated()) {
+            executor = Executors.newSingleThreadExecutor();
+        }
+        return executor;
+    }
+
     public boolean isSelectionActive() {
         return isSelectionActive;
     }
@@ -111,17 +141,40 @@ public class PdfTextSelectionManager {
     }
 
     /**
-     * Triggered on long press to select word at touch position.
+     * Detects whether text direction is RTL based on the first strong directional character.
+     * Supports Arabic, Hebrew, and other RTL scripts.
+     */
+    public static boolean isRtl(String text) {
+        if (text == null || text.isEmpty()) return false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            byte dir = Character.getDirectionality(c);
+            if (dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT ||
+                dir == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC) {
+                return true;
+            } else if (dir == Character.DIRECTIONALITY_LEFT_TO_RIGHT) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Triggered on long press to select word at touch position asynchronously.
+     * Keeps PDFium hit-testing completely off the main thread.
      */
     public boolean onLongPress(float touchX, float touchY) {
-        int pageIndex = pdfView.getCurrentPage();
         if (pdfView.getPdfFile() == null) return false;
+        final int pageIndex = pdfView.getCurrentPage();
+        if (pageIndex < 0) return false;
 
         float mappedX = -pdfView.getCurrentXOffset() + touchX;
         float mappedY = -pdfView.getCurrentYOffset() + touchY;
 
         float zoom = pdfView.getZoom();
         SizeF pageSize = pdfView.getPdfFile().getScaledPageSize(pageIndex, zoom);
+        if (pageSize.getWidth() <= 0 || pageSize.getHeight() <= 0) return false;
+
         float pageX, pageY;
         if (pdfView.isSwipeVertical()) {
             pageX = pdfView.getPdfFile().getSecondaryPageOffset(pageIndex, zoom);
@@ -135,32 +188,67 @@ public class PdfTextSelectionManager {
         float localY = mappedY - pageY;
 
         com.github.barteksc.pdfviewer.util.Size originalSize = pdfView.getPdfFile().getOriginalPageSize(pageIndex);
-        float pdfX = (localX / pageSize.getWidth()) * originalSize.getWidth();
-        float pdfY = ((pageSize.getHeight() - localY) / pageSize.getHeight()) * originalSize.getHeight();
+        if (originalSize.getWidth() <= 0 || originalSize.getHeight() <= 0) return false;
 
-        int totalChars = pdfView.getTextPageCountChars(pageIndex);
-        if (totalChars <= 0) return false;
+        final float pdfX = (localX / pageSize.getWidth()) * originalSize.getWidth();
+        final float pdfY = ((pageSize.getHeight() - localY) / pageSize.getHeight()) * originalSize.getHeight();
 
-        int charIndex = pdfView.getTextPageCharIndexAtPos(pageIndex, pdfX, pdfY, 15.0, 15.0);
-        if (charIndex < 0 || charIndex >= totalChars) return false;
+        final long reqId = currentRequestId.incrementAndGet();
 
-        // Expand to word boundaries
-        int wordStart = charIndex;
-        do {
-            String ch = pdfView.getTextPageText(pageIndex, wordStart - 1, 1);
-            if (isWordSeparator(ch)) break;
-            wordStart--;
-        } while (wordStart > 0);
+        getExecutor().execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (currentRequestId.get() != reqId) return;
 
-        int wordEnd = charIndex;
-        while (wordEnd < totalChars - 1) {
-            String ch = pdfView.getTextPageText(pageIndex, wordEnd + 1, 1);
-            if (isWordSeparator(ch)) break;
-            wordEnd++;
-        }
+                    int totalChars = pdfView.getTextPageCountChars(pageIndex);
+                    if (totalChars <= 0 || currentRequestId.get() != reqId) return;
 
-        setSelection(pageIndex, wordStart, wordEnd);
-        return isSelectionActive;
+                    // 1. Initial hit-test with standard tolerance
+                    int charIndex = pdfView.getTextPageCharIndexAtPos(pageIndex, pdfX, pdfY, 16.0, 16.0);
+                    // 2. Whitespace fallback with wider tolerance
+                    if (charIndex < 0) {
+                        charIndex = pdfView.getTextPageCharIndexAtPos(pageIndex, pdfX, pdfY, 32.0, 32.0);
+                    }
+                    if (charIndex < 0 || charIndex >= totalChars || currentRequestId.get() != reqId) return;
+
+                    // Expand to word boundaries (strictly guarded loop)
+                    int wordStart = charIndex;
+                    while (wordStart > 0) {
+                        String ch = pdfView.getTextPageText(pageIndex, wordStart - 1, 1);
+                        if (isWordSeparator(ch)) break;
+                        wordStart--;
+                    }
+
+                    int wordEnd = charIndex;
+                    while (wordEnd < totalChars - 1) {
+                        String ch = pdfView.getTextPageText(pageIndex, wordEnd + 1, 1);
+                        if (isWordSeparator(ch)) break;
+                        wordEnd++;
+                    }
+
+                    if (currentRequestId.get() != reqId) return;
+
+                    final int finalStart = wordStart;
+                    final int finalEnd = wordEnd;
+                    int count = (finalEnd - finalStart) + 1;
+                    final String text = pdfView.getTextPageText(pageIndex, finalStart, count);
+                    final List<RectF> normRects = extractNormalizedRects(pageIndex, finalStart, finalEnd);
+
+                    if (currentRequestId.get() != reqId) return;
+
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (currentRequestId.get() != reqId) return;
+                            applySelection(pageIndex, finalStart, finalEnd, text, normRects);
+                        }
+                    });
+                } catch (Throwable ignored) {}
+            }
+        });
+
+        return true;
     }
 
     private boolean isWordSeparator(String ch) {
@@ -169,7 +257,44 @@ public class PdfTextSelectionManager {
         return Character.isWhitespace(c) || c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':';
     }
 
-    public void setSelection(int pageIndex, int startIdx, int endIdx) {
+    public void setSelection(final int pageIndex, final int startIdx, final int endIdx) {
+        if (pdfView.getPdfFile() == null || pageIndex < 0) return;
+        final long reqId = currentRequestId.incrementAndGet();
+        getExecutor().execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (currentRequestId.get() != reqId) return;
+                    int totalChars = pdfView.getTextPageCountChars(pageIndex);
+                    if (totalChars <= 0) return;
+
+                    int s = Math.max(0, Math.min(startIdx, endIdx));
+                    int e = Math.min(totalChars - 1, Math.max(startIdx, endIdx));
+                    if (s > e) return;
+
+                    int count = (e - s) + 1;
+                    final String text = pdfView.getTextPageText(pageIndex, s, count);
+                    final List<RectF> normRects = extractNormalizedRects(pageIndex, s, e);
+
+                    if (currentRequestId.get() != reqId) return;
+
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (currentRequestId.get() != reqId) return;
+                            applySelection(pageIndex, s, e, text, normRects);
+                        }
+                    });
+                } catch (Throwable ignored) {}
+            }
+        });
+    }
+
+    /**
+     * Applies selection on the main thread and computes screen rects using pure float math
+     * from cached normalized rects. Never acquires PdfFile.lock.
+     */
+    public void applySelection(int pageIndex, int startIdx, int endIdx, String text, List<RectF> normalizedRects) {
         if (startIdx > endIdx) {
             int temp = startIdx;
             startIdx = endIdx;
@@ -179,30 +304,161 @@ public class PdfTextSelectionManager {
         this.selectedPageIndex = pageIndex;
         this.startCharIndex = startIdx;
         this.endCharIndex = endIdx;
-        int count = (endIdx - startIdx) + 1;
+        this.selectedText = text != null ? text : "";
+        synchronized (cachedNormalizedRects) {
+            this.cachedNormalizedRects.clear();
+            if (normalizedRects != null) {
+                this.cachedNormalizedRects.addAll(normalizedRects);
+            }
+        }
 
-        this.selectedText = pdfView.getTextPageText(pageIndex, startIdx, count);
-        recalculateHighlights();
+        updateScreenRectsFromNormalized();
 
         if (!highlightScreenRects.isEmpty()) {
             this.isSelectionActive = true;
             pdfView.invalidate();
             showActionMode();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && actionMode != null && !pdfView.isAnimating() && !isDraggingHandle()) {
+                try {
+                    actionMode.invalidateContentRect();
+                } catch (Exception ignored) {}
+            }
         } else {
             clearSelection();
         }
     }
 
-    public void recalculateHighlights() {
-        highlightScreenRects.clear();
-        if (selectedPageIndex < 0 || startCharIndex < 0 || endCharIndex < 0) return;
-        if (pdfView.getPdfFile() == null) return;
+    /**
+     * Extracts normalized rectangles (0f..1f relative to page) on background executor.
+     * Safely executes native PDFium character bounding box calls off the main thread.
+     *
+     * Converts to normalized coordinates, sorts strictly top-to-bottom line order,
+     * and merges contiguous character rects on the same visual line (within 0.6f * lineHeight).
+     */
+    private List<RectF> extractNormalizedRects(int pageIndex, int startIdx, int endIdx) {
+        if (pdfView.getPdfFile() == null || pageIndex < 0 || pageIndex >= pdfView.getPageCount() || startIdx < 0 || endIdx < startIdx) {
+            return Collections.emptyList();
+        }
 
-        int count = (endCharIndex - startCharIndex) + 1;
-        List<RectF> pdfRects = pdfView.getTextPageRects(selectedPageIndex, startCharIndex, count);
+        int count = (endIdx - startIdx) + 1;
+        List<RectF> pdfRects = pdfView.getTextPageRects(pageIndex, startIdx, count);
+        if (pdfRects == null || pdfRects.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        com.github.barteksc.pdfviewer.util.Size originalSize = pdfView.getPdfFile().getOriginalPageSize(pageIndex);
+        if (originalSize == null) return Collections.emptyList();
+        float origW = originalSize.getWidth();
+        float origH = originalSize.getHeight();
+        if (origW <= 0f || origH <= 0f) {
+            return Collections.emptyList();
+        }
+
+        // 1. Convert all PDFium character rects to normalized page coordinates (0f..1f, top-left origin)
+        List<RectF> rawNormRects = new ArrayList<>(pdfRects.size());
+        for (RectF r : pdfRects) {
+            float minX = Math.min(r.left, r.right);
+            float maxX = Math.max(r.left, r.right);
+            float minY = Math.min(r.top, r.bottom);
+            float maxY = Math.max(r.top, r.bottom);
+
+            float normLeft = (minX / origW);
+            float normRight = (maxX / origW);
+            float normTop = (origH - maxY) / origH;
+            float normBottom = (origH - minY) / origH;
+
+            float clampedLeft = Math.max(0f, Math.min(1f, normLeft));
+            float clampedTop = Math.max(0f, Math.min(1f, normTop));
+            float clampedRight = Math.max(0f, Math.min(1f, normRight));
+            float clampedBottom = Math.max(0f, Math.min(1f, normBottom));
+
+            if (clampedRight > clampedLeft && clampedBottom > clampedTop) {
+                rawNormRects.add(new RectF(clampedLeft, clampedTop, clampedRight, clampedBottom));
+            }
+        }
+
+        if (rawNormRects.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 2. Sort rects strictly and transitively: top-to-bottom, then left-to-right
+        // (Guarantees strict weak ordering, preventing TimSort "Comparison method violates its general contract!" crash)
+        Collections.sort(rawNormRects, new Comparator<RectF>() {
+            @Override
+            public int compare(RectF r1, RectF r2) {
+                int cmpTop = Float.compare(r1.top, r2.top);
+                if (cmpTop != 0) {
+                    return cmpTop;
+                }
+                return Float.compare(r1.left, r2.left);
+            }
+        });
+
+        // 3. Merge contiguous character boxes on the same line into uniform highlight bars
+        List<RectF> mergedLines = new ArrayList<>();
+        RectF currentLine = null;
+
+        for (RectF rect : rawNormRects) {
+            if (currentLine == null) {
+                currentLine = new RectF(rect);
+            } else {
+                float lineHeight = Math.max(currentLine.height(), rect.height());
+                if (Math.abs(currentLine.centerY() - rect.centerY()) < lineHeight * 0.6f) {
+                    currentLine.left = Math.min(currentLine.left, rect.left);
+                    currentLine.right = Math.max(currentLine.right, rect.right);
+                    currentLine.top = Math.min(currentLine.top, rect.top);
+                    currentLine.bottom = Math.max(currentLine.bottom, rect.bottom);
+                } else {
+                    mergedLines.add(currentLine);
+                    currentLine = new RectF(rect);
+                }
+            }
+        }
+        if (currentLine != null) {
+            mergedLines.add(currentLine);
+        }
+
+        return mergedLines;
+    }
+
+    /**
+     * Pure float math projection from cached normalized rects to screen coordinates.
+     * Zero locks, zero JNI calls, ultra-fast for 60fps rendering during pan/zoom.
+     *
+     * Serves as the Single Source of Truth for BOTH highlight bars and handle anchors.
+     */
+    public void updateScreenRectsFromNormalized() {
+        highlightScreenRects.clear();
+        if (selectedPageIndex < 0 || pdfView.getPdfFile() == null || selectedPageIndex >= pdfView.getPageCount()) {
+            hasStartHandle = false;
+            hasEndHandle = false;
+            startHandleRect.setEmpty();
+            endHandleRect.setEmpty();
+            return;
+        }
+
+        List<RectF> rectsCopy;
+        synchronized (cachedNormalizedRects) {
+            if (cachedNormalizedRects.isEmpty()) {
+                hasStartHandle = false;
+                hasEndHandle = false;
+                startHandleRect.setEmpty();
+                endHandleRect.setEmpty();
+                return;
+            }
+            rectsCopy = new ArrayList<>(cachedNormalizedRects);
+        }
 
         float zoom = pdfView.getZoom();
         SizeF pageSize = pdfView.getPdfFile().getScaledPageSize(selectedPageIndex, zoom);
+        if (pageSize == null || pageSize.getWidth() <= 0 || pageSize.getHeight() <= 0) {
+            hasStartHandle = false;
+            hasEndHandle = false;
+            startHandleRect.setEmpty();
+            endHandleRect.setEmpty();
+            return;
+        }
+
         float pageX, pageY;
         if (pdfView.isSwipeVertical()) {
             pageX = pdfView.getPdfFile().getSecondaryPageOffset(selectedPageIndex, zoom);
@@ -212,90 +468,124 @@ public class PdfTextSelectionManager {
             pageX = pdfView.getPdfFile().getPageOffset(selectedPageIndex, zoom);
         }
 
-        List<RectF> rawScreenRects = new ArrayList<>();
-        for (RectF pdfRect : pdfRects) {
-            RectF mappedRect = pdfView.getPdfFile().mapRectToDevice(
-                    selectedPageIndex,
-                    (int) pageX,
-                    (int) pageY,
-                    (int) pageSize.getWidth(),
-                    (int) pageSize.getHeight(),
-                    pdfRect
-            );
-            mappedRect.sort();
-            mappedRect.offset(pdfView.getCurrentXOffset(), pdfView.getCurrentYOffset());
-            rawScreenRects.add(mappedRect);
+        float offsetX = pdfView.getCurrentXOffset();
+        float offsetY = pdfView.getCurrentYOffset();
+        float pageW = pageSize.getWidth();
+        float pageH = pageSize.getHeight();
+
+        for (RectF norm : rectsCopy) {
+            float left = pageX + norm.left * pageW + offsetX;
+            float top = pageY + norm.top * pageH + offsetY;
+            float right = pageX + norm.right * pageW + offsetX;
+            float bottom = pageY + norm.bottom * pageH + offsetY;
+            highlightScreenRects.add(new RectF(left, top, right, bottom));
         }
 
-        // Merge adjacent character boxes on the same line into smooth continuous bars
-        List<RectF> mergedLines = mergeLineRects(rawScreenRects);
-        highlightScreenRects.addAll(mergedLines);
-
         if (!highlightScreenRects.isEmpty()) {
+            boolean isRtl = isRtl(selectedText);
             RectF first = highlightScreenRects.get(0);
             RectF last = highlightScreenRects.get(highlightScreenRects.size() - 1);
 
-            startHandleRect.set(first.left - HANDLE_RADIUS, first.bottom, first.left + HANDLE_RADIUS, first.bottom + (2 * HANDLE_RADIUS));
-            endHandleRect.set(last.right - HANDLE_RADIUS, last.bottom, last.right + HANDLE_RADIUS, last.bottom + (2 * HANDLE_RADIUS));
+            // RTL vs LTR Anchor placement at the true visual edges of text lines
+            startAnchorX = isRtl ? first.right : first.left;
+            startAnchorY = first.bottom;
+            endAnchorX = isRtl ? last.left : last.right;
+            endAnchorY = last.bottom;
 
-            // Dynamically update floating menu position as highlights shift
+            hasStartHandle = !Float.isNaN(startAnchorX) && !Float.isNaN(startAnchorY);
+            hasEndHandle = !Float.isNaN(endAnchorX) && !Float.isNaN(endAnchorY);
+
+            float density = context.getResources().getDisplayMetrics().density;
+            float r = 10.5f * density;
+            float d = 1.35f * r;
+            float touchTargetRadius = 24f * density; // 48dp touch target hitbox
+
+            float startCenterY = startAnchorY + d;
+            float endCenterY = endAnchorY + d;
+
+            startHandleRect.set(startAnchorX - touchTargetRadius, startCenterY - touchTargetRadius,
+                                startAnchorX + touchTargetRadius, startCenterY + touchTargetRadius);
+            endHandleRect.set(endAnchorX - touchTargetRadius, endCenterY - touchTargetRadius,
+                              endAnchorX + touchTargetRadius, endCenterY + touchTargetRadius);
+        } else {
+            hasStartHandle = false;
+            hasEndHandle = false;
+            startHandleRect.setEmpty();
+            endHandleRect.setEmpty();
+        }
+    }
+
+    /**
+     * Draws a Material 3 teardrop handle pointing precisely up at (anchorX, anchorY),
+     * with the rounded bulb hanging cleanly below the line so it never obscures text.
+     */
+    private void drawTeardropHandle(Canvas canvas, float anchorX, float anchorY, Paint paint) {
+        if (Float.isNaN(anchorX) || Float.isNaN(anchorY) || Float.isInfinite(anchorX) || Float.isInfinite(anchorY)) {
+            return;
+        }
+        float density = context.getResources().getDisplayMetrics().density;
+        float r = 10.5f * density; // ~10.5dp radius
+        float d = 1.35f * r;      // Distance from tip to bulb center
+
+        float cx = anchorX;
+        float cy = anchorY + d;
+
+        float sinAlpha = Math.min(1.0f, Math.max(0.0f, r / d));
+        float alpha = (float) Math.asin(sinAlpha);
+        float cosAlpha = (float) Math.cos(alpha);
+        float alphaDeg = (float) Math.toDegrees(alpha);
+
+        float t1X = cx - r * cosAlpha;
+        float t1Y = cy - r * sinAlpha;
+        float t2X = cx + r * cosAlpha;
+        float t2Y = cy - r * sinAlpha;
+
+        Path path = new Path();
+        path.moveTo(anchorX, anchorY);
+        path.lineTo(t2X, t2Y);
+
+        RectF oval = new RectF(cx - r, cy - r, cx + r, cy + r);
+        path.arcTo(oval, 360f - alphaDeg, 180f + 2 * alphaDeg, false);
+
+        path.lineTo(anchorX, anchorY);
+        path.close();
+
+        canvas.drawPath(path, paint);
+    }
+
+    /**
+     * Called when zoom/scroll/fling animation ends to update the ActionMode position once.
+     */
+    public void onAnimationEnd() {
+        if (isSelectionActive && !cachedNormalizedRects.isEmpty()) {
+            updateScreenRectsFromNormalized();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && actionMode != null) {
-                actionMode.invalidateContentRect();
+                try {
+                    actionMode.invalidateContentRect();
+                } catch (Exception ignored) {}
             }
         }
     }
 
-    private List<RectF> mergeLineRects(List<RectF> rawRects) {
-        if (rawRects == null || rawRects.isEmpty()) return new ArrayList<>();
-
-        List<RectF> merged = new ArrayList<>();
-        RectF currentLine = null;
-
-        for (RectF rect : rawRects) {
-            if (currentLine == null) {
-                currentLine = new RectF(rect);
-            } else {
-                float lineCenterY = currentLine.centerY();
-                float rectCenterY = rect.centerY();
-                float lineHeight = Math.max(currentLine.height(), rect.height());
-
-                // If on the same line (vertical overlap)
-                if (Math.abs(lineCenterY - rectCenterY) < lineHeight * 0.6f) {
-                    currentLine.left = Math.min(currentLine.left, rect.left);
-                    currentLine.right = Math.max(currentLine.right, rect.right);
-                    currentLine.top = Math.min(currentLine.top, rect.top);
-                    currentLine.bottom = Math.max(currentLine.bottom, rect.bottom);
-                } else {
-                    merged.add(currentLine);
-                    currentLine = new RectF(rect);
-                }
-            }
-        }
-        if (currentLine != null) {
-            merged.add(currentLine);
-        }
-        return merged;
-    }
-
+    /**
+     * Pure math draw pass executed on PDFView's onDraw. Never hits native PDFium lock.
+     */
     public void drawSelection(Canvas canvas) {
-        if (!isSelectionActive || highlightScreenRects.isEmpty()) return;
+        if (!isSelectionActive || cachedNormalizedRects.isEmpty()) return;
 
-        recalculateHighlights();
+        updateScreenRectsFromNormalized();
 
         // Draw highlights
         for (RectF rect : highlightScreenRects) {
             canvas.drawRect(rect, highlightPaint);
         }
 
-        // Draw teardrop selection handles
-        if (!highlightScreenRects.isEmpty()) {
-            RectF first = highlightScreenRects.get(0);
-            RectF last = highlightScreenRects.get(highlightScreenRects.size() - 1);
-
-            // Start handle
-            canvas.drawCircle(first.left, first.bottom + HANDLE_RADIUS, HANDLE_RADIUS, handlePaint);
-            // End handle
-            canvas.drawCircle(last.right, last.bottom + HANDLE_RADIUS, HANDLE_RADIUS, handlePaint);
+        // Draw sleek Material 3 teardrop handles
+        if (hasStartHandle) {
+            drawTeardropHandle(canvas, startAnchorX, startAnchorY, handlePaint);
+        }
+        if (hasEndHandle) {
+            drawTeardropHandle(canvas, endAnchorX, endAnchorY, handlePaint);
         }
     }
 
@@ -307,19 +597,20 @@ public class PdfTextSelectionManager {
 
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                if (!highlightScreenRects.isEmpty()) {
-                    RectF first = highlightScreenRects.get(0);
-                    RectF last = highlightScreenRects.get(highlightScreenRects.size() - 1);
+                if (hasStartHandle && hasEndHandle) {
+                    float startCenterX = startHandleRect.centerX();
+                    float startCenterY = startHandleRect.centerY();
+                    float endCenterX = endHandleRect.centerX();
+                    float endCenterY = endHandleRect.centerY();
 
-                    float startCenterX = first.left;
-                    float startCenterY = first.bottom + HANDLE_RADIUS;
-                    float endCenterX = last.right;
-                    float endCenterY = last.bottom + HANDLE_RADIUS;
+                    float density = context.getResources().getDisplayMetrics().density;
+                    float touchTolerance = 28f * density; // Generous ~56dp touch hitbox
 
                     float distStart = (float) Math.hypot(x - startCenterX, y - startCenterY);
                     float distEnd = (float) Math.hypot(x - endCenterX, y - endCenterY);
 
-                    if (distStart <= TOUCH_TOLERANCE || distEnd <= TOUCH_TOLERANCE) {
+                    if (distStart <= touchTolerance || distEnd <= touchTolerance) {
+                        dismissColorDropdown();
                         if (distStart <= distEnd) {
                             isDraggingStartHandle = true;
                             isDraggingEndHandle = false;
@@ -334,13 +625,20 @@ public class PdfTextSelectionManager {
 
             case MotionEvent.ACTION_MOVE:
                 if (isDraggingStartHandle || isDraggingEndHandle) {
-                    if (pdfView.getPdfFile() == null) return false;
+                    if (pdfView.getPdfFile() == null || selectedPageIndex < 0) return false;
 
-                    float mappedX = -pdfView.getCurrentXOffset() + x;
-                    float mappedY = -pdfView.getCurrentYOffset() + y;
+                    float density = context.getResources().getDisplayMetrics().density;
+                    float hitTestOffsetY = 16f * density; // Point above handle bulb towards text baseline
+                    float hitX = x;
+                    float hitY = y - hitTestOffsetY;
+
+                    float mappedX = -pdfView.getCurrentXOffset() + hitX;
+                    float mappedY = -pdfView.getCurrentYOffset() + hitY;
 
                     float zoom = pdfView.getZoom();
                     SizeF pageSize = pdfView.getPdfFile().getScaledPageSize(selectedPageIndex, zoom);
+                    if (pageSize.getWidth() <= 0 || pageSize.getHeight() <= 0) return false;
+
                     float pageX, pageY;
                     if (pdfView.isSwipeVertical()) {
                         pageX = pdfView.getPdfFile().getSecondaryPageOffset(selectedPageIndex, zoom);
@@ -353,31 +651,89 @@ public class PdfTextSelectionManager {
                     float localX = mappedX - pageX;
                     float localY = mappedY - pageY;
                     com.github.barteksc.pdfviewer.util.Size originalSize = pdfView.getPdfFile().getOriginalPageSize(selectedPageIndex);
-                    float pdfX = (localX / pageSize.getWidth()) * originalSize.getWidth();
-                    float pdfY = ((pageSize.getHeight() - localY) / pageSize.getHeight()) * originalSize.getHeight();
+                    if (originalSize.getWidth() <= 0 || originalSize.getHeight() <= 0) return false;
 
-                    int charIdx = pdfView.getTextPageCharIndexAtPos(selectedPageIndex, pdfX, pdfY, 15.0, 15.0);
-                    if (charIdx >= 0) {
-                        if (isDraggingStartHandle) {
-                            if (charIdx > endCharIndex) {
-                                // Crossed over the end handle -> swap active handle!
-                                isDraggingStartHandle = false;
-                                isDraggingEndHandle = true;
-                                setSelection(selectedPageIndex, endCharIndex, charIdx);
-                            } else {
-                                setSelection(selectedPageIndex, charIdx, endCharIndex);
-                            }
-                        } else {
-                            if (charIdx < startCharIndex) {
-                                // Crossed back over the start handle -> swap active handle!
-                                isDraggingStartHandle = true;
-                                isDraggingEndHandle = false;
-                                setSelection(selectedPageIndex, charIdx, startCharIndex);
-                            } else {
-                                setSelection(selectedPageIndex, startCharIndex, charIdx);
-                            }
+                    final float pdfX = (localX / pageSize.getWidth()) * originalSize.getWidth();
+                    final float pdfY = ((pageSize.getHeight() - localY) / pageSize.getHeight()) * originalSize.getHeight();
+
+                    final long reqId = currentRequestId.incrementAndGet();
+                    final boolean isStart = isDraggingStartHandle;
+                    final int page = selectedPageIndex;
+                    final int currentStart = startCharIndex;
+                    final int currentEnd = endCharIndex;
+
+                    getExecutor().execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                if (currentRequestId.get() != reqId) return;
+
+                                int totalChars = pdfView.getTextPageCountChars(page);
+                                if (totalChars <= 0 || currentRequestId.get() != reqId) return;
+
+                                // 1. Initial hit-test with standard tolerance
+                                int charIdx = pdfView.getTextPageCharIndexAtPos(page, pdfX, pdfY, 16.0, 16.0);
+
+                                // 2. Whitespace / inter-line fallback: retry with wider tolerance
+                                if (charIdx < 0) {
+                                    charIdx = pdfView.getTextPageCharIndexAtPos(page, pdfX, pdfY, 32.0, 32.0);
+                                }
+                                if (charIdx < 0) {
+                                    charIdx = pdfView.getTextPageCharIndexAtPos(page, pdfX, pdfY, 48.0, 32.0);
+                                }
+
+                                if (charIdx < 0 || currentRequestId.get() != reqId) return;
+
+                                charIdx = Math.max(0, Math.min(totalChars - 1, charIdx));
+
+                                int newStart, newEnd;
+                                boolean swapToStart = isStart;
+                                if (isStart) {
+                                    if (charIdx > currentEnd) {
+                                        newStart = currentEnd;
+                                        newEnd = charIdx;
+                                        swapToStart = false; // Start handle crossed over End handle -> became End handle
+                                    } else {
+                                        newStart = charIdx;
+                                        newEnd = currentEnd;
+                                    }
+                                } else {
+                                    if (charIdx < currentStart) {
+                                        newStart = charIdx;
+                                        newEnd = currentStart;
+                                        swapToStart = true; // End handle crossed over Start handle -> became Start handle
+                                    } else {
+                                        newStart = currentStart;
+                                        newEnd = charIdx;
+                                    }
+                                }
+
+                                if (newStart == currentStart && newEnd == currentEnd) return;
+
+                                int count = (newEnd - newStart) + 1;
+                                final String text = pdfView.getTextPageText(page, newStart, count);
+                                final List<RectF> normRects = extractNormalizedRects(page, newStart, newEnd);
+
+                                if (currentRequestId.get() != reqId) return;
+
+                                final boolean finalSwapToStart = swapToStart;
+                                final int finalStart = newStart;
+                                final int finalEnd = newEnd;
+
+                                mainHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        if (currentRequestId.get() != reqId) return;
+                                        if (isDraggingStartHandle || isDraggingEndHandle) {
+                                            isDraggingStartHandle = finalSwapToStart;
+                                            isDraggingEndHandle = !finalSwapToStart;
+                                        }
+                                        applySelection(page, finalStart, finalEnd, text, normRects);
+                                    }
+                                });
+                            } catch (Throwable ignored) {}
                         }
-                    }
+                    });
                     return true;
                 }
                 break;
@@ -387,6 +743,11 @@ public class PdfTextSelectionManager {
                 if (isDraggingStartHandle || isDraggingEndHandle) {
                     isDraggingStartHandle = false;
                     isDraggingEndHandle = false;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && actionMode != null && !pdfView.isAnimating()) {
+                        try {
+                            actionMode.invalidateContentRect();
+                        } catch (Exception ignored) {}
+                    }
                     return true;
                 }
                 break;
@@ -396,6 +757,7 @@ public class PdfTextSelectionManager {
     }
 
     public void clearSelection() {
+        currentRequestId.incrementAndGet();
         dismissColorDropdown();
         isSelectionActive = false;
         isDraggingStartHandle = false;
@@ -404,13 +766,33 @@ public class PdfTextSelectionManager {
         startCharIndex = -1;
         endCharIndex = -1;
         selectedText = "";
+        cachedNormalizedRects.clear();
         highlightScreenRects.clear();
+        hasStartHandle = false;
+        hasEndHandle = false;
+        startHandleRect.setEmpty();
+        endHandleRect.setEmpty();
 
         if (actionMode != null) {
-            actionMode.finish();
+            ActionMode am = actionMode;
             actionMode = null;
+            try {
+                am.finish();
+            } catch (Exception ignored) {}
         }
         pdfView.invalidate();
+    }
+
+    public void dispose() {
+        clearSelection();
+        synchronized (this) {
+            if (executor != null) {
+                try {
+                    executor.shutdownNow();
+                } catch (Exception ignored) {}
+                executor = null;
+            }
+        }
     }
 
     private static final int MENU_COPY = 1;
@@ -433,7 +815,7 @@ public class PdfTextSelectionManager {
 
     private PopupWindow colorDropdownPopup;
 
-    private void dismissColorDropdown() {
+    public void dismissColorDropdown() {
         if (colorDropdownPopup != null && colorDropdownPopup.isShowing()) {
             try {
                 colorDropdownPopup.dismiss();
@@ -708,14 +1090,22 @@ public class PdfTextSelectionManager {
                 public void onGetContentRect(ActionMode mode, View view, Rect outRect) {
                     if (!highlightScreenRects.isEmpty()) {
                         float minL = Float.MAX_VALUE, minT = Float.MAX_VALUE;
-                        float maxR = Float.MIN_VALUE, maxB = Float.MIN_VALUE;
+                        float maxR = -Float.MAX_VALUE, maxB = -Float.MAX_VALUE;
                         for (RectF r : highlightScreenRects) {
                             minL = Math.min(minL, r.left);
                             minT = Math.min(minT, r.top);
                             maxR = Math.max(maxR, r.right);
                             maxB = Math.max(maxB, r.bottom);
                         }
-                        outRect.set((int) minL, (int) minT, (int) maxR, (int) maxB);
+                        if (maxR > minL && maxB > minT) {
+                            outRect.set((int) minL, (int) minT, (int) maxR, (int) maxB);
+                            return;
+                        }
+                    }
+                    if (view != null) {
+                        outRect.set(0, 0, Math.max(1, view.getWidth()), Math.max(1, view.getHeight()));
+                    } else {
+                        outRect.set(0, 0, 1, 1);
                     }
                 }
 
@@ -791,11 +1181,31 @@ public class PdfTextSelectionManager {
     }
 
     private void selectAllOnPage() {
-        if (selectedPageIndex >= 0) {
-            int totalChars = pdfView.getTextPageCountChars(selectedPageIndex);
-            if (totalChars > 0) {
-                setSelection(selectedPageIndex, 0, totalChars - 1);
+        if (selectedPageIndex < 0) return;
+        final int page = selectedPageIndex;
+        final long reqId = currentRequestId.incrementAndGet();
+        getExecutor().execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (currentRequestId.get() != reqId) return;
+                    int totalChars = pdfView.getTextPageCountChars(page);
+                    if (totalChars <= 0 || currentRequestId.get() != reqId) return;
+
+                    final String text = pdfView.getTextPageText(page, 0, totalChars);
+                    final List<RectF> normRects = extractNormalizedRects(page, 0, totalChars - 1);
+
+                    if (currentRequestId.get() != reqId) return;
+
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (currentRequestId.get() != reqId) return;
+                            applySelection(page, 0, totalChars - 1, text, normRects);
+                        }
+                    });
+                } catch (Throwable ignored) {}
             }
-        }
+        });
     }
 }

@@ -75,6 +75,18 @@ class AnnotationRenderer {
         strokeWidth = 3f
     }
 
+    private val inactiveSearchHighlightPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+        color = 0x66FFEB3B // Translucent yellow
+    }
+
+    private val activeSearchHighlightPaint = Paint().apply {
+        isAntiAlias = true
+        style = Paint.Style.FILL
+        color = 0x99FF9800.toInt() // Vivid translucent orange
+    }
+
     private val rectF = RectF()
 
     // Pre-allocated reusable Path instance
@@ -150,11 +162,29 @@ class AnnotationRenderer {
         persistedAnnotations: List<PdfAnnotation>?,
         activeStroke: ActiveStroke?,
         isEditMode: Boolean = false,
-        selectedAnnotationId: String? = null
+        selectedAnnotationId: String? = null,
+        searchMatches: List<com.anasdev.pdfreader.domain.model.SearchMatch>? = null,
+        activeSearchMatchId: Int? = null
     ) {
         if (pageWidth <= 0f || pageHeight <= 0f) return
 
-        // 1. Draw persisted annotations on this page
+        // 1. Draw search match highlights on this page
+        searchMatches?.forEach { match ->
+            val isActive = match.id == activeSearchMatchId
+            val paint = if (isActive) activeSearchHighlightPaint else inactiveSearchHighlightPaint
+            val cornerRadius = 2f
+
+            for (rect in match.rects) {
+                val left = rect.left * pageWidth
+                val top = rect.top * pageHeight
+                val right = rect.right * pageWidth
+                val bottom = rect.bottom * pageHeight
+                rectF.set(left, top, right, bottom)
+                canvas.drawRoundRect(rectF, cornerRadius, cornerRadius, paint)
+            }
+        }
+
+        // 2. Draw persisted annotations on this page
         persistedAnnotations?.forEach { annotation ->
             if (annotation.pageIndex == pageIndex) {
                 when (annotation) {

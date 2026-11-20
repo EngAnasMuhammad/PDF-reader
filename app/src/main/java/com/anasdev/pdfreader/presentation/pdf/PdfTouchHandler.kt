@@ -37,6 +37,8 @@ private enum class SignatureTouchMode {
 
 class AnnotationStateHolder {
     var annotationsByPage: Map<Int, List<PdfAnnotation>> = emptyMap()
+    var searchMatchesByPage: Map<Int, List<com.anasdev.pdfreader.domain.model.SearchMatch>> = emptyMap()
+    var activeSearchMatchId: Int? = null
     var isEditMode: Boolean = false
     var activeTool: AnnotationTool = AnnotationTool.NONE
     var selectedColorArgb: Int = PdfViewModel.DEFAULT_PEN_COLOR
@@ -104,6 +106,10 @@ class PdfTouchHandler(
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDoubleTap(e: MotionEvent): Boolean {
+            if (pdfView.textSelectionManager != null && pdfView.textSelectionManager.isSelectionActive) {
+                pdfView.clearTextSelection()
+                stateHolder.onDismissHighlight?.invoke()
+            }
             val currentZoom = pdfView.zoom
             if (currentZoom < 0.94f) {
                 pdfView.zoomWithAnimation(e.x, e.y, 0.95f)
@@ -117,10 +123,11 @@ class PdfTouchHandler(
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             if (!stateHolder.isEditMode) {
-                // If text selection is currently active, tapping dismisses it
+                // If text selection is currently active, tapping dismisses it immediately
                 if (pdfView.textSelectionManager != null && pdfView.textSelectionManager.isSelectionActive) {
+                    pdfView.clearTextSelection()
                     stateHolder.onDismissHighlight?.invoke()
-                    return super.onSingleTapConfirmed(e)
+                    return true
                 }
 
                 // Hit test for existing TextHighlight at tap position

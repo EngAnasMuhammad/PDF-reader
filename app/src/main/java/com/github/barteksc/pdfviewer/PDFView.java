@@ -458,6 +458,11 @@ public class PDFView extends RelativeLayout {
             decodingAsyncTask.cancel(true);
         }
 
+        clearTextSelection();
+        if (textSelectionManager != null) {
+            textSelectionManager.dispose();
+        }
+
         // Clear caches
         cacheManager.recycle();
 
@@ -496,6 +501,7 @@ public class PDFView extends RelativeLayout {
 
     @Override
     protected void onDetachedFromWindow() {
+        clearTextSelection();
         recycle();
         if (renderingHandlerThread != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
@@ -1190,6 +1196,10 @@ public class PDFView extends RelativeLayout {
         return zoom != minZoom;
     }
 
+    public boolean isAnimating() {
+        return animationManager != null && animationManager.isAnimating();
+    }
+
     private void setDefaultPage(int defaultPage) {
         this.defaultPage = defaultPage;
     }
@@ -1537,87 +1547,22 @@ public class PDFView extends RelativeLayout {
      * Returns normalized text selection rectangles grouped by page index (0f..1f range relative to page width/height).
      */
     public Map<Integer, List<RectF>> getNormalizedSelectionRectsByPage() {
-        if (textSelectionManager == null || !textSelectionManager.isSelectionActive() || pdfFile == null) {
+        if (textSelectionManager == null || !textSelectionManager.isSelectionActive()) {
             return Collections.emptyMap();
         }
 
         int pageIndex = textSelectionManager.getSelectedPageIndex();
-        int start = textSelectionManager.getStartCharIndex();
-        int end = textSelectionManager.getEndCharIndex();
-        if (pageIndex < 0 || start < 0 || end < 0) {
+        if (pageIndex < 0) {
             return Collections.emptyMap();
         }
 
-        int count = (end - start) + 1;
-        List<RectF> pdfRects = getTextPageRects(pageIndex, start, count);
-        if (pdfRects == null || pdfRects.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        com.github.barteksc.pdfviewer.util.Size originalSize = pdfFile.getOriginalPageSize(pageIndex);
-        float origW = originalSize.getWidth();
-        float origH = originalSize.getHeight();
-        if (origW <= 0f || origH <= 0f) {
-            return Collections.emptyMap();
-        }
-
-        // Merge adjacent character boxes on the same line in PDF coordinate space
-        List<RectF> mergedPdfRects = new ArrayList<>();
-        RectF currentLine = null;
-
-        for (RectF rect : pdfRects) {
-            if (currentLine == null) {
-                currentLine = new RectF(rect);
-            } else {
-                float lineCenterY = currentLine.centerY();
-                float rectCenterY = rect.centerY();
-                float lineHeight = Math.max(Math.abs(currentLine.height()), Math.abs(rect.height()));
-
-                if (Math.abs(lineCenterY - rectCenterY) < lineHeight * 0.6f) {
-                    currentLine.left = Math.min(currentLine.left, rect.left);
-                    currentLine.right = Math.max(currentLine.right, rect.right);
-                    currentLine.top = Math.max(currentLine.top, rect.top);
-                    currentLine.bottom = Math.min(currentLine.bottom, rect.bottom);
-                } else {
-                    mergedPdfRects.add(currentLine);
-                    currentLine = new RectF(rect);
-                }
-            }
-        }
-        if (currentLine != null) {
-            mergedPdfRects.add(currentLine);
-        }
-
-        List<RectF> normalizedRects = new ArrayList<>(mergedPdfRects.size());
-        for (RectF r : mergedPdfRects) {
-            float minX = Math.min(r.left, r.right);
-            float maxX = Math.max(r.left, r.right);
-            float minY = Math.min(r.top, r.bottom);
-            float maxY = Math.max(r.top, r.bottom);
-
-            // In PDFium coordinates: (0,0) is bottom-left, y goes up
-            // Normalized page coordinates: (0,0) is top-left, y goes down
-            float normLeft = (minX / origW);
-            float normRight = (maxX / origW);
-            float normTop = (origH - maxY) / origH;
-            float normBottom = (origH - minY) / origH;
-
-            float clampedLeft = Math.max(0f, Math.min(1f, normLeft));
-            float clampedTop = Math.max(0f, Math.min(1f, normTop));
-            float clampedRight = Math.max(0f, Math.min(1f, normRight));
-            float clampedBottom = Math.max(0f, Math.min(1f, normBottom));
-
-            if (clampedRight > clampedLeft && clampedBottom > clampedTop) {
-                normalizedRects.add(new RectF(clampedLeft, clampedTop, clampedRight, clampedBottom));
-            }
-        }
-
-        if (normalizedRects.isEmpty()) {
+        List<RectF> norm = textSelectionManager.getNormalizedSelectionRects();
+        if (norm == null || norm.isEmpty()) {
             return Collections.emptyMap();
         }
 
         Map<Integer, List<RectF>> map = new HashMap<>();
-        map.put(pageIndex, normalizedRects);
+        map.put(pageIndex, norm);
         return map;
     }
 
@@ -1625,6 +1570,45 @@ public class PDFView extends RelativeLayout {
         if (textSelectionManager != null) {
             textSelectionManager.clearSelection();
         }
+    }
+
+    /**
+     * Extracts full plain text of the given page for search scanning.
+     */
+    public String extractPageTextForSearch(int pageIndex) {
+        return pdfFile != null ? pdfFile.extractPageTextForSearch(pageIndex) : "";
+    }
+
+    /**
+     * Resolves character index ranges on a page into normalized 0f..1f bounding boxes.
+     */
+    public List<RectF> getNormalizedTextRectsForRange(int pageIndex, int startIndex, int length) {
+        return pdfFile != null ? pdfFile.getNormalizedTextRectsForRange(pageIndex, startIndex, length) : Collections.<RectF>emptyList();
+    }
+
+    /**
+     * Jumps to the specified page and smoothly centers the target match based on normalizedCenterY (0f..1f).
+     */
+    public void jumpToMatch(int pageIndex, float normalizedCenterY) {
+        if (pdfFile == null) return;
+        pageIndex = pdfFile.determineValidPageNumberFrom(pageIndex);
+        float clampedCenterY = Math.max(0f, Math.min(1f, normalizedCenterY));
+
+        if (swipeVertical) {
+            float pageStartOffset = -pdfFile.getPageOffset(pageIndex, zoom);
+            if (pageIndex == 0) pageStartOffset += documentTopPaddingPx;
+            float pageHeight = pdfFile.getPageLength(pageIndex, zoom);
+
+            // Target offset centers the match within the visible viewport (accounting for top/bottom padding)
+            float visibleViewportHeight = Math.max(100f, getHeight() - documentTopPaddingPx - documentBottomPaddingPx);
+            float targetOffsetY = pageStartOffset - (clampedCenterY * pageHeight) + (visibleViewportHeight / 2f);
+
+            animationManager.startYAnimation(currentYOffset, targetOffsetY);
+        } else {
+            float pageStartOffset = -pdfFile.getPageOffset(pageIndex, zoom);
+            animationManager.startXAnimation(currentXOffset, pageStartOffset);
+        }
+        showPage(pageIndex);
     }
 
     public float getPageOffset(int pageIndex, float zoom) {

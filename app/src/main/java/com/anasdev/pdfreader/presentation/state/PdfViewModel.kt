@@ -11,10 +11,12 @@ import com.anasdev.pdfreader.domain.model.FreehandStroke
 import com.anasdev.pdfreader.domain.model.NormalizedPoint
 import com.anasdev.pdfreader.domain.model.NormalizedRect
 import com.anasdev.pdfreader.domain.model.PdfAnnotation
-import com.anasdev.pdfreader.domain.model.ReadingMode
 import com.anasdev.pdfreader.data.local.SignatureStorage
 import com.anasdev.pdfreader.domain.model.PdfCollection
+import com.anasdev.pdfreader.domain.model.ReadingMode
 import com.anasdev.pdfreader.domain.model.SavedSignature
+import com.anasdev.pdfreader.domain.model.SearchMatch
+import com.anasdev.pdfreader.domain.model.SearchUiState
 import com.anasdev.pdfreader.domain.model.Signature
 import com.anasdev.pdfreader.domain.model.TextBox
 import com.anasdev.pdfreader.domain.model.TextHighlight
@@ -25,7 +27,11 @@ import com.anasdev.pdfreader.domain.repository.PdfRepository
 import com.anasdev.pdfreader.domain.repository.PdfToolsRepository
 import com.anasdev.pdfreader.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -38,9 +44,11 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 import kotlin.math.max
+import kotlin.time.Duration.Companion.milliseconds
 
 sealed interface ExportUiEvent {
     data class Success(val uri: Uri, val displayName: String) : ExportUiEvent
@@ -126,6 +134,18 @@ class PdfViewModel @Inject constructor(
     private val _selectedAnnotationId = MutableStateFlow<String?>(null)
     val selectedAnnotationId: StateFlow<String?> = _selectedAnnotationId.asStateFlow()
 
+    // Selected highlight popup state (tap-to-recolor/delete pill in Reading mode)
+    private val _selectedHighlightState = MutableStateFlow<Pair<TextHighlight, Pair<Float, Float>>?>(null)
+    val selectedHighlightState: StateFlow<Pair<TextHighlight, Pair<Float, Float>>?> = _selectedHighlightState.asStateFlow()
+
+    fun setSelectedHighlight(highlight: TextHighlight, screenX: Float, screenY: Float) {
+        _selectedHighlightState.value = highlight to (screenX to screenY)
+    }
+
+    fun clearSelectedHighlight() {
+        _selectedHighlightState.value = null
+    }
+
     // --- REUSABLE VECTOR SIGNATURE STATE ---
     private val _savedSignature = MutableStateFlow<SavedSignature?>(null)
     val savedSignature: StateFlow<SavedSignature?> = _savedSignature.asStateFlow()
@@ -182,6 +202,13 @@ class PdfViewModel @Inject constructor(
 
     private val _toolResultEvent = MutableSharedFlow<ToolResultEvent>()
     val toolResultEvent: SharedFlow<ToolResultEvent> = _toolResultEvent.asSharedFlow()
+
+    // --- PDF IN-DOCUMENT SEARCH STATE ---
+    private val _searchUiState = MutableStateFlow(SearchUiState())
+    val searchUiState: StateFlow<SearchUiState> = _searchUiState.asStateFlow()
+
+    private var activeSearchJob: Job? = null
+    private var searchDebounceJob: Job? = null
 
     // --- UNDO / REDO STATE ---
     private sealed interface UndoAction {
@@ -246,6 +273,7 @@ class PdfViewModel @Inject constructor(
 
     // --- ANNOTATION ACTIONS ---
     fun enterEditMode() {
+        closeSearch()
         val current = roomAnnotations.value
         initialSessionSnapshot = current.mapValues { it.value.toList() }
         _draftAnnotations.value = current.mapValues { it.value.toMutableList() }
@@ -297,6 +325,16 @@ class PdfViewModel @Inject constructor(
         _isEditMode.value = false
         _activeTool.value = AnnotationTool.NONE
         _selectedAnnotationId.value = null
+    }
+
+    fun exitEditMode() {
+        discardAndExitEditMode()
+    }
+
+    fun clearDocumentSessionUiState() {
+        _selectedHighlightState.value = null
+        closeSearch()
+        exitEditMode()
     }
 
     fun setActiveTool(tool: AnnotationTool) {
@@ -878,6 +916,7 @@ class PdfViewModel @Inject constructor(
 
     // --- PDF ACTIONS ---
     fun loadPdf(uri: Uri) {
+        clearDocumentSessionUiState()
         _pdfLoadError.value = false
         _pdfUri.value = null
         _startPage.value = 0
@@ -1128,6 +1167,180 @@ class PdfViewModel @Inject constructor(
         }
     }
 
+    // --- IN-DOCUMENT TEXT SEARCH ACTIONS ---
+
+    fun openSearch() {
+        if (_isEditMode.value) {
+            discardAndExitEditMode()
+        }
+        _searchUiState.value = _searchUiState.value.copy(
+            isSearchOpen = true
+        )
+    }
+
+    fun closeSearch() {
+        searchDebounceJob?.cancel()
+        searchDebounceJob = null
+        activeSearchJob?.cancel()
+        activeSearchJob = null
+        _searchUiState.value = SearchUiState(isSearchOpen = false)
+    }
+
+    fun onSearchQueryChange(
+        newQuery: String,
+        pageCount: Int,
+        startPage: Int = _startPage.value,
+        searchPageProvider: suspend (pageIndex: Int) -> List<SearchMatch>
+    ) {
+        val previousQuery = _searchUiState.value.query
+        val trimmedNew = newQuery.trim()
+        val trimmedPrevious = previousQuery.trim()
+
+        // Always preserve raw newQuery so users can freely type whitespace/multi-word phrases
+        _searchUiState.value = _searchUiState.value.copy(
+            query = newQuery
+        )
+
+        // If only trailing/leading spaces were added or removed without changing the trimmed search term,
+        // preserve current results and skip restarting or cancelling the search job
+        if (trimmedNew == trimmedPrevious) {
+            return
+        }
+
+        searchDebounceJob?.cancel()
+        activeSearchJob?.cancel()
+        activeSearchJob = null
+
+        _searchUiState.value = _searchUiState.value.copy(
+            isSearching = false
+        )
+
+        if (trimmedNew.isBlank() || pageCount <= 0) {
+            _searchUiState.value = _searchUiState.value.copy(
+                matches = emptyList(),
+                currentMatchIndex = -1,
+                matchesByPage = emptyMap(),
+                isSearching = false
+            )
+            return
+        }
+
+        searchDebounceJob = viewModelScope.launch {
+            delay(250.milliseconds) // ~250ms debounce
+            startSearch(trimmedNew, startPage, pageCount, searchPageProvider)
+        }
+    }
+
+    fun startSearch(
+        query: String,
+        startPage: Int,
+        pageCount: Int,
+        searchPageProvider: suspend (pageIndex: Int) -> List<SearchMatch>
+    ) {
+        activeSearchJob?.cancel()
+        val trimmed = query.trim()
+        if (trimmed.isBlank() || pageCount <= 0) {
+            _searchUiState.value = _searchUiState.value.copy(
+                query = query,
+                matches = emptyList(),
+                currentMatchIndex = -1,
+                matchesByPage = emptyMap(),
+                isSearching = false
+            )
+            return
+        }
+
+        activeSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            _searchUiState.value = _searchUiState.value.copy(
+                query = query,
+                isSearching = true,
+                matches = emptyList(),
+                currentMatchIndex = -1,
+                matchesByPage = emptyMap()
+            )
+
+            val accumulatedMatches = mutableListOf<SearchMatch>()
+            val accumulatedByPage = mutableMapOf<Int, MutableList<SearchMatch>>()
+
+            // Scan strictly in sequential document order (0 until pageCount)
+            // so match IDs and numbering (1/N..N/N) always follow Page 1 -> Last Page order
+            for (pageIndex in 0 until pageCount) {
+                ensureActive()
+
+                val pageMatches = try {
+                    searchPageProvider(pageIndex)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+
+                ensureActive()
+
+                if (pageMatches.isNotEmpty()) {
+                    val assignedMatches = pageMatches.mapIndexed { indexOnPage, match ->
+                        match.copy(id = accumulatedMatches.size + indexOnPage)
+                    }
+
+                    accumulatedMatches.addAll(assignedMatches)
+                    val pageList = accumulatedByPage.getOrPut(pageIndex) { mutableListOf() }
+                    pageList.addAll(assignedMatches)
+
+                    val currentSnapshot = accumulatedMatches.toList()
+                    val byPageSnapshot = accumulatedByPage.mapValues { it.value.toList() }
+
+                    withContext(Dispatchers.Main.immediate) {
+                        val prevIndex = _searchUiState.value.currentMatchIndex
+                        // Smart selection: as matches accumulate, auto-select the first match whose pageIndex >= startPage
+                        val targetIndex = if (prevIndex == -1) {
+                            val candidateIndex = currentSnapshot.indexOfFirst { it.pageIndex >= startPage }
+                            if (candidateIndex != -1) candidateIndex else -1
+                        } else {
+                            prevIndex
+                        }
+                        _searchUiState.value = _searchUiState.value.copy(
+                            matches = currentSnapshot,
+                            currentMatchIndex = targetIndex,
+                            matchesByPage = byPageSnapshot
+                        )
+                    }
+                }
+            }
+
+            withContext(Dispatchers.Main.immediate) {
+                val finalMatches = _searchUiState.value.matches
+                val finalIndex = _searchUiState.value.currentMatchIndex
+                // If scan finished and no match had pageIndex >= startPage, select the first match in the document (index 0)
+                val resolvedIndex = if (finalIndex == -1 && finalMatches.isNotEmpty()) 0 else finalIndex
+                _searchUiState.value = _searchUiState.value.copy(
+                    isSearching = false,
+                    currentMatchIndex = resolvedIndex
+                )
+            }
+        }
+    }
+
+    fun nextMatch() {
+        val state = _searchUiState.value
+        val total = state.matches.size
+        if (total <= 1) return
+        val next = (state.currentMatchIndex + 1) % total
+        _searchUiState.value = state.copy(currentMatchIndex = next)
+    }
+
+    fun previousMatch() {
+        val state = _searchUiState.value
+        val total = state.matches.size
+        if (total <= 1) return
+        val prev = if (state.currentMatchIndex - 1 < 0) total - 1 else state.currentMatchIndex - 1
+        _searchUiState.value = state.copy(currentMatchIndex = prev)
+    }
+
+    fun selectMatch(matchIndex: Int) {
+        val state = _searchUiState.value
+        if (matchIndex in state.matches.indices) {
+            _searchUiState.value = state.copy(currentMatchIndex = matchIndex)
+        }
+    }
+
     companion object {
         val PEN_COLORS = listOf(
             0xFFE53935.toInt(), // Red
@@ -1159,3 +1372,4 @@ class PdfViewModel @Inject constructor(
         const val MAX_TEXT_WIDTH = 0.95f
     }
 }
+
